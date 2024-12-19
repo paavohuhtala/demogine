@@ -1,0 +1,84 @@
+{
+  "accessors": [
+    {
+      "bufferView": 0,
+      "count": 1674,
+      "componentType": 5126,
+      "type": "VEC3",
+      "min": [-1.4281996488571167, -1.0094560384750366, -5.5880045890808105],
+      "max": [1.4281998872756958, 3.2455101013183594, 7.055514335632324]
+    },
+    { "bufferView": 1, "count": 1674, "componentType": 5126, "type": "VEC3" },
+    { "bufferView": 2, "count": 1674, "componentType": 5126, "type": "VEC2" },
+    { "bufferView": 3, "count": 1674, "componentType": 5126, "type": "VEC4" },
+    { "bufferView": 4, "count": 5934, "componentType": 5123, "type": "SCALAR" }
+  ],
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v4.3.47",
+    "version": "2.0"
+  },
+  "buffers": [{ "byteLength": 12374040 }],
+  "bufferViews": [
+    { "buffer": 0, "byteLength": 20088, "byteOffset": 0, "target": 34962 },
+    { "buffer": 0, "byteLength": 20088, "byteOffset": 20088, "target": 34962 },
+    { "buffer": 0, "byteLength": 13392, "byteOffset": 40176, "target": 34962 },
+    { "buffer": 0, "byteLength": 26784, "byteOffset": 53568, "target": 34962 },
+    { "buffer": 0, "byteLength": 11868, "byteOffset": 80352, "target": 34963 },
+    { "buffer": 0, "byteLength": 1429188, "byteOffset": 92220 },
+    { "buffer": 0, "byteLength": 6468868, "byteOffset": 1521408 },
+    { "buffer": 0, "byteLength": 4383763, "byteOffset": 7990276 }
+  ],
+  "scene": 0,
+  "images": [
+    { "bufferView": 5, "mimeType": "image/png", "name": "spacefarjan_n" },
+    { "bufferView": 6, "mimeType": "image/png", "name": "spacefarjan_a" },
+    {
+      "bufferView": 7,
+      "mimeType": "image/png",
+      "name": "spacefarjan_m-spacefarjan_r"
+    }
+  ],
+  "materials": [
+    {
+      "alphaMode": "OPAQUE",
+      "doubleSided": true,
+      "name": "Material",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "baseColorTexture": { "index": 1, "texCoord": 0 },
+        "metallicFactor": 1.0,
+        "roughnessFactor": 1.0,
+        "metallicRoughnessTexture": { "index": 2, "texCoord": 0 }
+      },
+      "normalTexture": { "index": 0, "scale": 1.0, "texCoord": 0 },
+      "emissiveFactor": [0.0, 0.0, 0.0]
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Cube",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TANGENT": 3,
+            "TEXCOORD_0": 2
+          },
+          "indices": 4,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [{ "mesh": 0, "name": "Farjan" }],
+  "samplers": [
+    { "magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497 }
+  ],
+  "scenes": [{ "name": "Scene", "nodes": [0] }],
+  "textures": [
+    { "sampler": 0, "source": 0 },
+    { "sampler": 0, "source": 1 },
+    { "sampler": 0, "source": 2 }
+  ]
+}
