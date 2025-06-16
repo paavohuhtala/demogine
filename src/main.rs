@@ -2,6 +2,7 @@ use anyhow::Result;
 
 mod camera;
 mod model;
+mod shader_loader;
 mod texture;
 mod window;
 
