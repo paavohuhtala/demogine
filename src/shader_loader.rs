@@ -25,7 +25,7 @@ pub(crate) struct ShaderDefinition {
 pub(crate) struct ShaderLoader {
     pub default_shader: wgpu::RenderPipeline,
     receiver: std::sync::mpsc::Receiver<(ShaderDefinition, wgpu::RenderPipeline)>,
-    _debouncer: Debouncer<ReadDirectoryChangesWatcher>,
+    _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
 
 impl ShaderLoader {

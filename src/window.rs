@@ -85,6 +85,8 @@ impl GraphicsState {
             desired_maximum_frame_latency: 2,
         };
 
+        surface.configure(&device, &config);
+
         let mut camera_uniform = CameraUniform::default();
         camera_uniform.update(size, &game_state.camera);
 
