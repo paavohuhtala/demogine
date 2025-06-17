@@ -5,7 +5,7 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 use itertools::Itertools;
 use rand::Rng;
 use wgpu::{
-    util::DeviceExt, CommandEncoderDescriptor, DepthBiasState, MultisampleState,
+    util::DeviceExt, CommandEncoderDescriptor, DepthBiasState, Device, MultisampleState,
     PipelineCompilationOptions, RenderPassDescriptor, ShaderSource, StencilState,
 };
 use winit::{
@@ -15,7 +15,7 @@ use winit::{
 use crate::{
     camera::{Camera, CameraUniform},
     model::{Instance, Model, RenderModel, RENDER_MODEL_VBL},
-    shader_loader::ShaderLoader,
+    shader_loader::{PipelineCacheBuilder, PipelineId, ShaderDefinition, ShaderLoader},
     texture::DepthTexture,
 };
 
@@ -29,6 +29,8 @@ struct GraphicsState {
 
     depth_texture: DepthTexture,
 
+    default_pipeline_id: PipelineId,
+    fullscreen_quad: RenderModel,
     render_model: RenderModel,
 
     camera_uniform: CameraUniform,
@@ -129,59 +131,79 @@ impl GraphicsState {
                 push_constant_ranges: &[],
             });
 
-        let shader_loader = ShaderLoader::new(device.clone(), move |device, shader_def, source| {
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(shader_def.name),
-                source: ShaderSource::Wgsl(source.into()),
-            });
+        const DEFAULT_SHADER: ShaderDefinition = ShaderDefinition {
+            name: "Default Shader",
+            path: "shader.wgsl",
+        };
 
-            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Render pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[RENDER_MODEL_VBL, Instance::descriptor()],
-                    compilation_options: PipelineCompilationOptions::default(),
+        let mut cache_builder: PipelineCacheBuilder = PipelineCacheBuilder::new();
+        let default_pipeline_id = cache_builder.add_shader(
+            DEFAULT_SHADER,
+            Box::new(
+                move |device: &Device, shader_def: &ShaderDefinition, source: &str| {
+                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                        label: Some(shader_def.name),
+                        source: ShaderSource::Wgsl(source.into()),
+                    });
+
+                    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some("Render pipeline"),
+                        layout: Some(&render_pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vs_main"),
+                            buffers: &[RENDER_MODEL_VBL, Instance::descriptor()],
+                            compilation_options: PipelineCompilationOptions::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fs_main"),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: config.format,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                            compilation_options: PipelineCompilationOptions::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Cw,
+                            cull_mode: Some(wgpu::Face::Back),
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            unclipped_depth: false,
+                            conservative: false,
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DepthTexture::DEPTH_FORMAT,
+                            depth_write_enabled: true,
+                            depth_compare: wgpu::CompareFunction::Less,
+                            stencil: StencilState::default(),
+                            bias: DepthBiasState::default(),
+                        }),
+                        multisample: MultisampleState::default(),
+                        multiview: None,
+                        cache: None,
+                    });
+
+                    Ok(pipeline)
                 },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Cw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: DepthTexture::DEPTH_FORMAT,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: StencilState::default(),
-                    bias: DepthBiasState::default(),
-                }),
-                multisample: MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            });
+            ),
+        );
 
-            Ok(pipeline)
-        });
+        let shader_loader = ShaderLoader::new(device.clone(), cache_builder);
 
-        let (document, buffers, _images) = gltf::import("assets/spacefarjan.glb")?;
-        let ship: gltf::Mesh<'_> = document.meshes().next().context("No meshes in gltf")?;
-        let model = Model::from_gtlf(ship, &buffers).context("Failed to create model")?;
-        let render_model = RenderModel::from_model(&device, model);
+        let render_model = {
+            let (document, buffers, _images) = gltf::import("assets/spacefarjan.glb")?;
+            let ship: gltf::Mesh<'_> = document.meshes().next().context("No meshes in gltf")?;
+            let model = Model::from_gtlf(ship, &buffers).context("Failed to create model")?;
+            RenderModel::from_model(&device, model)
+        };
+
+        let fullscreen_quad = {
+            let quad_model = Model::quad();
+            RenderModel::from_model(&device, quad_model)
+        };
 
         let instance_buffer_descriptor = wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
@@ -205,6 +227,8 @@ impl GraphicsState {
             queue,
             config,
             size,
+            default_pipeline_id,
+            fullscreen_quad,
             render_model,
             camera_uniform,
             camera_buffer,
@@ -287,7 +311,9 @@ impl GraphicsState {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            render_pass.set_pipeline(&self.shader_loader.default_shader);
+
+            let pipeline = self.shader_loader.cache.get(self.default_pipeline_id);
+            render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.render_model.vertex_buffer.slice(..));

@@ -1,54 +1,154 @@
-use std::{path::Path, sync::mpsc::channel, time::Duration};
+use std::{
+    path::Path,
+    sync::{
+        mpsc::{self, channel},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::Context;
+use id_arena::{Arena, Id};
 use notify_debouncer_mini::{
     new_debouncer_opt, notify::*, DebounceEventResult, DebouncedEventKind, Debouncer,
 };
 use pollster::block_on;
-use wgpu::PollType;
+use wgpu::{PollType, RenderPipeline};
 
 const SHADER_FOLDER: &'static str = "src/shaders";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ShaderId {
-    Default,
-}
+type PipelineFactory = Box<
+    dyn Sync
+        + Send
+        + Fn(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<wgpu::RenderPipeline>,
+>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ShaderDefinition {
-    pub id: ShaderId,
     pub name: &'static str,
-    path: &'static str,
+    pub path: &'static str,
+}
+
+pub struct ShaderEntry {
+    pipeline_id: PipelineId,
+    def: ShaderDefinition,
+    factory: PipelineFactory,
+}
+
+impl ShaderEntry {
+    pub fn new(pipeline_id: PipelineId, def: ShaderDefinition, factory: PipelineFactory) -> Self {
+        Self {
+            pipeline_id,
+            def,
+            factory,
+        }
+    }
+}
+
+pub type PipelineId = Id<PipelineCacheEntry>;
+
+pub struct PipelineCacheEntry {
+    id: PipelineId,
+    pipeline: Option<wgpu::RenderPipeline>,
+}
+
+impl PipelineCacheEntry {
+    pub fn new(id: PipelineId) -> Self {
+        Self { id, pipeline: None }
+    }
+
+    pub fn set_pipeline(&mut self, pipeline: wgpu::RenderPipeline) -> &mut Self {
+        self.pipeline = Some(pipeline);
+        self
+    }
+
+    /*pub fn compile(&mut self, device: &wgpu::Device) -> anyhow::Result<&wgpu::RenderPipeline> {
+        let source = std::fs::read_to_string(Path::new(SHADER_FOLDER).join(self.shader_def.path))
+            .map_err(|e| anyhow::anyhow!("Failed to read shader file: {}", e))?;
+        self.pipeline = Some((self.factory)(device, &self.shader_def, &source)?);
+        Ok(self.pipeline.as_ref().unwrap())
+    }*/
+}
+
+pub struct PipelineCacheBuilder {
+    shaders: Arena<ShaderEntry>,
+    pipelines: Arena<PipelineCacheEntry>,
+}
+
+impl PipelineCacheBuilder {
+    pub fn new() -> Self {
+        Self {
+            shaders: Arena::new(),
+            pipelines: Arena::new(),
+        }
+    }
+
+    pub fn add_shader(
+        &mut self,
+        shader_def: ShaderDefinition,
+        factory: PipelineFactory,
+    ) -> PipelineId {
+        let pipeline_id = self.pipelines.alloc_with_id(PipelineCacheEntry::new);
+        let shader_entry = ShaderEntry::new(pipeline_id, shader_def, factory);
+        self.shaders.alloc(shader_entry);
+        pipeline_id
+    }
+
+    pub fn build(self) -> PipelineCache {
+        PipelineCache {
+            shaders: Arc::new(self.shaders),
+            pipelines: self.pipelines,
+        }
+    }
+}
+
+pub struct PipelineCache {
+    shaders: Arc<Arena<ShaderEntry>>,
+    pipelines: Arena<PipelineCacheEntry>,
+}
+
+impl PipelineCache {
+    pub fn get(&self, id: PipelineId) -> &RenderPipeline {
+        self.pipelines.get(id).unwrap().pipeline.as_ref().unwrap()
+    }
+
+    pub fn get_entry_mut(&mut self, id: PipelineId) -> &mut PipelineCacheEntry {
+        self.pipelines.get_mut(id).unwrap()
+    }
+
+    pub fn iter_shaders_and_pipelines_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&ShaderEntry, &mut PipelineCacheEntry)> {
+        // This assumes that the shaders and pipelines are in sync, which should be the case
+        // because the same method inserts to both arenas.
+        self.shaders
+            .iter()
+            .map(|(_, shader_entry)| shader_entry)
+            .zip(
+                self.pipelines
+                    .iter_mut()
+                    .map(|(_, pipeline_entry)| pipeline_entry),
+            )
+    }
 }
 
 // Loads and compiles shaders to pipelines in a worker thread.
 pub(crate) struct ShaderLoader {
-    pub default_shader: wgpu::RenderPipeline,
-    receiver: std::sync::mpsc::Receiver<(ShaderDefinition, wgpu::RenderPipeline)>,
+    pub cache: PipelineCache,
+    device: wgpu::Device,
+    receiver: mpsc::Receiver<(PipelineId, wgpu::RenderPipeline)>,
     _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
 
 impl ShaderLoader {
-    pub fn new<F>(device: wgpu::Device, mut load_pipeline: F) -> Self
-    where
-        F: 'static
-            + Clone
-            + Send
-            + Sync
-            + FnMut(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<wgpu::RenderPipeline>,
-    {
-        const DEFAULT_SHADER_FILE: &'static str = "shader.wgsl";
-
-        const DEFAULT_SHADER: ShaderDefinition = ShaderDefinition {
-            id: ShaderId::Default,
-            name: "Default Shader",
-            path: DEFAULT_SHADER_FILE,
-        };
+    pub fn new(device: wgpu::Device, cache_builder: PipelineCacheBuilder) -> Self {
+        let cache = cache_builder.build();
 
         let (send_changed_shaders, recv_changed_shaders) = channel();
 
-        let mut load_pipeline_watcher = load_pipeline.clone();
         let device_loader = device.clone();
+
+        let shaders = cache.shaders.clone();
 
         let mut debouncer = new_debouncer_opt(
             notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(100)),
@@ -56,23 +156,26 @@ impl ShaderLoader {
                 match res {
                     Ok(events) => {
                         for event in events {
-                            if event.path.ends_with(DEFAULT_SHADER_FILE)
-                                && event.kind == DebouncedEventKind::Any
-                            {
-                                // Load the default shader
-                                println!("Reloading shader: {:?}", DEFAULT_SHADER.id);
-                                match compile_file(
-                                    &device_loader,
-                                    &DEFAULT_SHADER,
-                                    &mut load_pipeline_watcher,
-                                ) {
-                                    Ok(pipeline) => {
-                                        send_changed_shaders
-                                            .send((DEFAULT_SHADER, pipeline))
-                                            .unwrap();
-                                    }
-                                    Err(e) => println!("Failed to load shader: {}", e),
+                            if event.kind != DebouncedEventKind::Any {
+                                continue;
+                            }
+
+                            // This is stupid and slow, but that's life
+                            let Some(entry) = shaders
+                                .iter()
+                                .find(|(_, entry)| event.path.ends_with(entry.def.path))
+                                .map(|(_, entry)| entry)
+                            else {
+                                continue;
+                            };
+
+                            match compile_file(&device_loader, &entry.def, &entry.factory) {
+                                Ok(pipeline) => {
+                                    send_changed_shaders
+                                        .send((entry.pipeline_id, pipeline))
+                                        .unwrap();
                                 }
+                                Err(e) => println!("Failed to load shader: {}", e),
                             }
                         }
                     }
@@ -90,46 +193,50 @@ impl ShaderLoader {
             .watch(&absolute_shader_folder, RecursiveMode::Recursive)
             .unwrap();
 
-        let default_shader = compile_file(&device, &DEFAULT_SHADER, &mut load_pipeline)
-            .unwrap_or_else(|e| {
-                println!("Failed to compile default shader: {}", e);
-                panic!("Shader compilation failed");
-            });
-
-        Self {
-            default_shader,
+        let mut shader_loader = Self {
+            device,
+            cache,
             receiver: recv_changed_shaders,
             _debouncer: debouncer,
+        };
+
+        shader_loader
+            .create_all_pipelines()
+            .expect("Failed to create all pipelines");
+
+        shader_loader
+    }
+
+    pub(crate) fn create_all_pipelines(&mut self) -> anyhow::Result<()> {
+        for (shader, pipeline_entry) in self.cache.iter_shaders_and_pipelines_mut() {
+            let pipeline = compile_file(&self.device, &shader.def, &shader.factory)
+                .context(format!("Failed to compile shader: {}", shader.def.name))?;
+            pipeline_entry.set_pipeline(pipeline);
         }
+        Ok(())
     }
 
     pub(crate) fn load_pending_shaders(&mut self) -> anyhow::Result<()> {
-        while let Ok((shader_def, pipeline)) = self.receiver.try_recv() {
-            match shader_def.id {
-                ShaderId::Default => {
-                    self.default_shader = pipeline;
-                }
-            }
+        while let Ok((pipeline_id, pipeline)) = self.receiver.try_recv() {
+            let entry = self.cache.get_entry_mut(pipeline_id);
+            entry.set_pipeline(pipeline);
         }
 
         Ok(())
     }
 }
 
-fn compile_file<F>(
+fn compile_file(
     device: &wgpu::Device,
     shader_def: &ShaderDefinition,
-    f: &mut F,
-) -> anyhow::Result<wgpu::RenderPipeline>
-where
-    F: FnMut(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<wgpu::RenderPipeline>,
-{
+    factory: &PipelineFactory,
+) -> anyhow::Result<wgpu::RenderPipeline> {
     device.push_error_scope(wgpu::ErrorFilter::Validation);
 
     let path = Path::new(SHADER_FOLDER).join(shader_def.path);
     let shader_code = std::fs::read_to_string(&path)
         .map_err(|e| anyhow::anyhow!("Failed to read shader file {}: {}", path.display(), e))?;
-    let pipeline = f(device, shader_def, &shader_code);
+    let pipeline = factory(device, shader_def, &shader_code);
 
     device
         .poll(PollType::Wait)
