@@ -48,35 +48,6 @@ impl Model {
 
         Ok(Model { vertices, indices })
     }
-
-    pub fn quad() -> Model {
-        let vertices = vec![
-            Vertex {
-                position: Vec3::new(-0.5, -0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                tex_coords: Vec2::new(0.0, 1.0),
-            },
-            Vertex {
-                position: Vec3::new(0.5, -0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                tex_coords: Vec2::new(1.0, 1.0),
-            },
-            Vertex {
-                position: Vec3::new(0.5, 0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                tex_coords: Vec2::new(1.0, 0.0),
-            },
-            Vertex {
-                position: Vec3::new(-0.5, 0.5, 0.0),
-                normal: Vec3::new(0.0, 0.0, 1.0),
-                tex_coords: Vec2::new(0.0, 0.0),
-            },
-        ];
-
-        let indices = vec![2, 1, 3, 2, 3, 0];
-
-        Model { vertices, indices }
-    }
 }
 
 pub struct RenderModel {
@@ -87,10 +58,6 @@ pub struct RenderModel {
 
 impl RenderModel {
     pub fn from_model(device: &wgpu::Device, model: Model) -> Self {
-        println!("Creating render model");
-        println!("Vertices: {:?}", model.vertices.len());
-        println!("Indices: {:?}", model.indices.len());
-
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&model.vertices),

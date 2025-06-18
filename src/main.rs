@@ -1,7 +1,10 @@
 use anyhow::Result;
 
 mod camera;
+mod global_uniform;
 mod model;
+mod passes;
+mod render_common;
 mod shader_loader;
 mod texture;
 mod window;

@@ -40,7 +40,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    const light_direction = vec3(0.0, 1.0, 0.0);
+    const light_direction = vec3(0.0, -1.0, 0.0);
     let normal = normalize(in.normal);
     let intensity = dot(normal, light_direction);
     return vec4<f32>(intensity, intensity, intensity, 1.0);

@@ -47,27 +47,13 @@ impl ShaderEntry {
 
 pub type PipelineId = Id<PipelineCacheEntry>;
 
-pub struct PipelineCacheEntry {
-    id: PipelineId,
-    pipeline: Option<wgpu::RenderPipeline>,
-}
+#[derive(Default)]
+pub struct PipelineCacheEntry(Option<wgpu::RenderPipeline>);
 
 impl PipelineCacheEntry {
-    pub fn new(id: PipelineId) -> Self {
-        Self { id, pipeline: None }
+    pub fn set_pipeline(&mut self, pipeline: wgpu::RenderPipeline) {
+        self.0 = Some(pipeline);
     }
-
-    pub fn set_pipeline(&mut self, pipeline: wgpu::RenderPipeline) -> &mut Self {
-        self.pipeline = Some(pipeline);
-        self
-    }
-
-    /*pub fn compile(&mut self, device: &wgpu::Device) -> anyhow::Result<&wgpu::RenderPipeline> {
-        let source = std::fs::read_to_string(Path::new(SHADER_FOLDER).join(self.shader_def.path))
-            .map_err(|e| anyhow::anyhow!("Failed to read shader file: {}", e))?;
-        self.pipeline = Some((self.factory)(device, &self.shader_def, &source)?);
-        Ok(self.pipeline.as_ref().unwrap())
-    }*/
 }
 
 pub struct PipelineCacheBuilder {
@@ -81,14 +67,12 @@ impl PipelineCacheBuilder {
             shaders: Arena::new(),
             pipelines: Arena::new(),
         }
-    }
-
-    pub fn add_shader(
+    }    pub fn add_shader(
         &mut self,
         shader_def: ShaderDefinition,
         factory: PipelineFactory,
     ) -> PipelineId {
-        let pipeline_id = self.pipelines.alloc_with_id(PipelineCacheEntry::new);
+        let pipeline_id = self.pipelines.alloc(PipelineCacheEntry::default());
         let shader_entry = ShaderEntry::new(pipeline_id, shader_def, factory);
         self.shaders.alloc(shader_entry);
         pipeline_id
@@ -109,7 +93,7 @@ pub struct PipelineCache {
 
 impl PipelineCache {
     pub fn get(&self, id: PipelineId) -> &RenderPipeline {
-        self.pipelines.get(id).unwrap().pipeline.as_ref().unwrap()
+        self.pipelines.get(id).unwrap().0.as_ref().unwrap()
     }
 
     pub fn get_entry_mut(&mut self, id: PipelineId) -> &mut PipelineCacheEntry {
@@ -144,7 +128,7 @@ impl ShaderLoader {
     pub fn new(device: wgpu::Device, cache_builder: PipelineCacheBuilder) -> Self {
         let cache = cache_builder.build();
 
-        let (send_changed_shaders, recv_changed_shaders) = channel();
+        let (send_new_pipelines, recv_new_pipelines) = channel();
 
         let device_loader = device.clone();
 
@@ -171,7 +155,7 @@ impl ShaderLoader {
 
                             match compile_file(&device_loader, &entry.def, &entry.factory) {
                                 Ok(pipeline) => {
-                                    send_changed_shaders
+                                    send_new_pipelines
                                         .send((entry.pipeline_id, pipeline))
                                         .unwrap();
                                 }
@@ -196,7 +180,7 @@ impl ShaderLoader {
         let mut shader_loader = Self {
             device,
             cache,
-            receiver: recv_changed_shaders,
+            receiver: recv_new_pipelines,
             _debouncer: debouncer,
         };
 
