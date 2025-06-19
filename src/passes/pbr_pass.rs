@@ -36,8 +36,6 @@ impl Pass for PbrPass {
     where
         Self: Sized,
     {
-        let camera_buffer = &common.camera_buffer;
-
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("camera_bind_group_layout"),
@@ -58,7 +56,7 @@ impl Pass for PbrPass {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: camera_buffer.as_entire_binding(),
+                resource: common.camera_uniform_buffer.as_entire_binding(),
             }],
         });
 

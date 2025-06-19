@@ -67,7 +67,8 @@ impl PipelineCacheBuilder {
             shaders: Arena::new(),
             pipelines: Arena::new(),
         }
-    }    pub fn add_shader(
+    }
+    pub fn add_shader(
         &mut self,
         shader_def: ShaderDefinition,
         factory: PipelineFactory,
@@ -120,7 +121,7 @@ impl PipelineCache {
 pub(crate) struct ShaderLoader {
     pub cache: PipelineCache,
     device: wgpu::Device,
-    receiver: mpsc::Receiver<(PipelineId, wgpu::RenderPipeline)>,
+    receiver: mpsc::Receiver<(&'static str, PipelineId, wgpu::RenderPipeline)>,
     _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
 
@@ -156,7 +157,7 @@ impl ShaderLoader {
                             match compile_file(&device_loader, &entry.def, &entry.factory) {
                                 Ok(pipeline) => {
                                     send_new_pipelines
-                                        .send((entry.pipeline_id, pipeline))
+                                        .send((entry.def.name, entry.pipeline_id, pipeline))
                                         .unwrap();
                                 }
                                 Err(e) => println!("Failed to load shader: {}", e),
@@ -201,8 +202,9 @@ impl ShaderLoader {
     }
 
     pub(crate) fn load_pending_shaders(&mut self) -> anyhow::Result<()> {
-        while let Ok((pipeline_id, pipeline)) = self.receiver.try_recv() {
+        while let Ok((name, pipeline_id, pipeline)) = self.receiver.try_recv() {
             let entry = self.cache.get_entry_mut(pipeline_id);
+            println!("Shader reloaded: {}", name);
             entry.set_pipeline(pipeline);
         }
 

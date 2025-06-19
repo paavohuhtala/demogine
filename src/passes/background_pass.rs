@@ -13,6 +13,7 @@ use crate::{
 
 pub struct BackgroundPass {
     pipeline_id: PipelineId,
+    global_uniform_bind_group: wgpu::BindGroup,
 }
 
 const FULLSCREEN_QUAD_SHADER: ShaderDefinition = ShaderDefinition {
@@ -32,14 +33,16 @@ impl Pass for BackgroundPass {
         common: Arc<RenderCommon>,
         cache_builder: &mut crate::shader_loader::PipelineCacheBuilder,
     ) -> anyhow::Result<BackgroundPass> {
+        let global_uniform_bind_group = common.global_uniform.bind_group.clone();
+
         let quad_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Quad Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&common.global_uniform.bind_group_layout],
                 push_constant_ranges: &[],
             });
 
-        let fullscreen_quad_pipeline_id = cache_builder.add_shader(
+        let pipeline_id = cache_builder.add_shader(
             FULLSCREEN_QUAD_SHADER,
             Box::new(
                 move |device: &Device, shader_def: &ShaderDefinition, source: &str| {
@@ -88,7 +91,8 @@ impl Pass for BackgroundPass {
         );
 
         Ok(Self {
-            pipeline_id: fullscreen_quad_pipeline_id,
+            pipeline_id,
+            global_uniform_bind_group,
         })
     }
 
@@ -119,6 +123,8 @@ impl Pass for BackgroundPass {
         let pipeline = pipeline_cache.get(self.pipeline_id);
 
         render_pass.set_pipeline(pipeline);
+        render_pass.set_bind_group(0, &self.global_uniform_bind_group, &[]);
+
         render_callback(&mut render_pass);
     }
 }

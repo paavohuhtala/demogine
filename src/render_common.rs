@@ -1,13 +1,14 @@
 use std::sync::RwLock;
 
-use wgpu::{Buffer, SurfaceConfiguration};
+use wgpu::SurfaceConfiguration;
 use winit::dpi::PhysicalSize;
 
-use crate::camera::CameraUniform;
+use crate::global_uniform::{GlobalUniform, GlobalUniformState};
 
 pub struct RenderCommon {
     pub output_surface_config: RwLock<SurfaceConfiguration>,
-    pub camera_buffer: Buffer,
+    pub camera_uniform_buffer: wgpu::Buffer,
+    pub global_uniform: GlobalUniform,
 }
 
 impl RenderCommon {
@@ -16,6 +17,7 @@ impl RenderCommon {
         adapter: &wgpu::Adapter,
         surface: &wgpu::Surface,
         size: PhysicalSize<u32>,
+        camera_uniform_buffer: wgpu::Buffer,
     ) -> Self {
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -38,12 +40,12 @@ impl RenderCommon {
 
         surface.configure(device, &output_surface_config);
 
-        let default_camera_uniform = CameraUniform::default();
-        let camera_buffer = default_camera_uniform.create_buffer(device);
+        let global_uniform = GlobalUniform::new(device, GlobalUniformState::new(size, 0.0));
 
         Self {
             output_surface_config: RwLock::new(output_surface_config),
-            camera_buffer,
+            camera_uniform_buffer,
+            global_uniform,
         }
     }
 }

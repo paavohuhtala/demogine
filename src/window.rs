@@ -10,7 +10,8 @@ use winit::{
 };
 
 use crate::{
-    camera::{Camera, CameraUniform},
+    camera::{Camera, RenderCamera},
+    global_uniform::GlobalUniformState,
     model::{Instance, Model, RenderModel},
     passes::{
         background_pass::{BackgroundPass, BackgroundPassTextureViews},
@@ -33,7 +34,7 @@ struct GraphicsState {
     depth_texture: DepthTexture,
     render_model: RenderModel,
 
-    camera_uniform: CameraUniform,
+    camera: RenderCamera,
 
     instance_buffer: wgpu::Buffer,
     shader_loader: ShaderLoader,
@@ -69,11 +70,16 @@ impl GraphicsState {
             .await
             .unwrap();
 
-        let common = RenderCommon::new(&device, &adapter, &surface, size);
-        let common = Arc::new(common);
+        let camera = RenderCamera::new(&device, game_state.camera.clone(), size);
 
-        let mut camera_uniform = CameraUniform::default();
-        camera_uniform.update(size, &game_state.camera);
+        let common = RenderCommon::new(
+            &device,
+            &adapter,
+            &surface,
+            size,
+            camera.uniform_buffer.clone(),
+        );
+        let common = Arc::new(common);
 
         let depth_texture = {
             let surface_config = common.output_surface_config.read().unwrap();
@@ -118,7 +124,7 @@ impl GraphicsState {
             common,
             size,
             render_model,
-            camera_uniform,
+            camera,
             depth_texture,
             instance_buffer,
             shader_loader,
@@ -128,7 +134,7 @@ impl GraphicsState {
         })
     }
 
-    fn resize(&mut self, game_state: &GameState, new_size: winit::dpi::PhysicalSize<u32>) {
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         let common = self.common.as_ref();
         let mut config = common.output_surface_config.write().unwrap();
 
@@ -140,17 +146,12 @@ impl GraphicsState {
 
             self.depth_texture.resize(&self.device, &config);
 
-            self.camera_uniform.update(new_size, &game_state.camera);
-            self.queue.write_buffer(
-                &common.camera_buffer,
-                0,
-                bytemuck::cast_slice(&[self.camera_uniform]),
-            );
+            self.camera.update_resolution(new_size);
         }
     }
 
     fn update(&mut self, game_state: &GameState) {
-        self.camera_uniform.update(self.size, &game_state.camera);
+        self.camera.update_camera(&game_state.camera);
     }
 
     fn render(
@@ -161,6 +162,12 @@ impl GraphicsState {
         self.shader_loader
             .load_pending_shaders()
             .expect("Failed to load pending shaders");
+
+        self.camera.update_uniform_buffer(&self.queue);
+        self.common.global_uniform.update(
+            &self.queue,
+            GlobalUniformState::new(self.size, game_state.start_time.elapsed().as_secs_f32()),
+        );
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -186,28 +193,30 @@ impl GraphicsState {
             },
         );
 
-        self.pbr_pass.render(
-            &PbrTextureViews {
-                color: view.clone(),
-                depth: self.depth_texture.view().clone(),
-            },
-            &mut encoder,
-            pipeline_cache,
-            |render_pass| {
-                render_pass.set_vertex_buffer(0, self.render_model.vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        if false {
+            self.pbr_pass.render(
+                &PbrTextureViews {
+                    color: view.clone(),
+                    depth: self.depth_texture.view().clone(),
+                },
+                &mut encoder,
+                pipeline_cache,
+                |render_pass| {
+                    render_pass.set_vertex_buffer(0, self.render_model.vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-                render_pass.set_index_buffer(
-                    self.render_model.index_buffer.slice(..),
-                    wgpu::IndexFormat::Uint32,
-                );
-                render_pass.draw_indexed(
-                    0..self.render_model.num_indices as u32,
-                    0,
-                    0..game_state.instances.len() as u32,
-                );
-            },
-        );
+                    render_pass.set_index_buffer(
+                        self.render_model.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint32,
+                    );
+                    render_pass.draw_indexed(
+                        0..self.render_model.num_indices as u32,
+                        0,
+                        0..game_state.instances.len() as u32,
+                    );
+                },
+            );
+        }
 
         let command_buffer = encoder.finish();
 
@@ -222,6 +231,7 @@ impl GraphicsState {
 struct GameState {
     instances: Vec<Instance>,
     camera: Camera,
+    start_time: std::time::Instant,
 }
 
 impl GameState {
@@ -254,7 +264,11 @@ impl GameState {
             })
             .collect_vec();
 
-        Self { instances, camera }
+        Self {
+            instances,
+            camera,
+            start_time: std::time::Instant::now(),
+        }
     }
 }
 
@@ -294,10 +308,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(new_size) => {
-                self.graphics_state
-                    .as_mut()
-                    .unwrap()
-                    .resize(&self.game_state, new_size);
+                self.graphics_state.as_mut().unwrap().resize(new_size);
             }
             WindowEvent::RedrawRequested => {
                 let state = self.graphics_state.as_mut().unwrap();
@@ -307,7 +318,7 @@ impl ApplicationHandler for App {
                 match state.render(&self.game_state, self.mouse_pos) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        state.resize(&self.game_state, state.size);
+                        state.resize(state.size);
                     }
                     Err(wgpu::SurfaceError::OutOfMemory) => {
                         log::error!("Out of memory");
