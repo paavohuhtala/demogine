@@ -2,20 +2,28 @@ use std::{
     path::Path,
     sync::{
         mpsc::{self, channel},
-        Arc,
+        Arc, RwLock,
     },
     time::Duration,
 };
 
 use anyhow::Context;
 use id_arena::{Arena, Id};
+use naga::{
+    back::wgsl::WriterFlags,
+    valid::{Capabilities, ValidationFlags},
+};
+use naga_oil::compose::{
+    ComposableModuleDescriptor, Composer, NagaModuleDescriptor, ShaderLanguage,
+};
 use notify_debouncer_mini::{
     new_debouncer_opt, notify::*, DebounceEventResult, DebouncedEventKind, Debouncer,
 };
 use pollster::block_on;
-use wgpu::{PollType, RenderPipeline};
+use wgpu::{naga, PollType, RenderPipeline};
 
 const SHADER_FOLDER: &'static str = "src/shaders";
+const SHADER_SHADER_MODULES_FOLDER: &'static str = "src/shaders/shared";
 
 type PipelineFactory = Box<
     dyn Sync
@@ -122,6 +130,7 @@ pub(crate) struct ShaderLoader {
     pub cache: PipelineCache,
     device: wgpu::Device,
     receiver: mpsc::Receiver<(&'static str, PipelineId, wgpu::RenderPipeline)>,
+    composer: Arc<RwLock<Composer>>,
     _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
 
@@ -133,8 +142,11 @@ impl ShaderLoader {
 
         let device_loader = device.clone();
 
-        let shaders = cache.shaders.clone();
+        let composer = create_composer().expect("Failed to create composer for shader loader");
+        let composer = Arc::new(RwLock::new(composer));
 
+        let shaders = cache.shaders.clone();
+        let composer_clone = composer.clone();
         let mut debouncer = new_debouncer_opt(
             notify_debouncer_mini::Config::default().with_timeout(Duration::from_millis(100)),
             move |res: DebounceEventResult| {
@@ -153,14 +165,18 @@ impl ShaderLoader {
                             else {
                                 continue;
                             };
-
-                            match compile_file(&device_loader, &entry.def, &entry.factory) {
+                            match compile_file(
+                                &device_loader,
+                                &entry.def,
+                                &entry.factory,
+                                composer_clone.clone(),
+                            ) {
                                 Ok(pipeline) => {
                                     send_new_pipelines
                                         .send((entry.def.name, entry.pipeline_id, pipeline))
                                         .unwrap();
                                 }
-                                Err(e) => println!("Failed to load shader: {}", e),
+                                Err(e) => println!("Failed to load shader: {:?}", e),
                             }
                         }
                     }
@@ -182,6 +198,7 @@ impl ShaderLoader {
             device,
             cache,
             receiver: recv_new_pipelines,
+            composer,
             _debouncer: debouncer,
         };
 
@@ -194,8 +211,13 @@ impl ShaderLoader {
 
     pub(crate) fn create_all_pipelines(&mut self) -> anyhow::Result<()> {
         for (shader, pipeline_entry) in self.cache.iter_shaders_and_pipelines_mut() {
-            let pipeline = compile_file(&self.device, &shader.def, &shader.factory)
-                .context(format!("Failed to compile shader: {}", shader.def.name))?;
+            let pipeline = compile_file(
+                &self.device,
+                &shader.def,
+                &shader.factory,
+                self.composer.clone(),
+            )
+            .context(format!("Failed to compile shader: {}", shader.def.name))?;
             pipeline_entry.set_pipeline(pipeline);
         }
         Ok(())
@@ -216,12 +238,35 @@ fn compile_file(
     device: &wgpu::Device,
     shader_def: &ShaderDefinition,
     factory: &PipelineFactory,
+    composer: Arc<RwLock<Composer>>,
 ) -> anyhow::Result<wgpu::RenderPipeline> {
-    device.push_error_scope(wgpu::ErrorFilter::Validation);
-
     let path = Path::new(SHADER_FOLDER).join(shader_def.path);
     let shader_code = std::fs::read_to_string(&path)
         .map_err(|e| anyhow::anyhow!("Failed to read shader file {}: {}", path.display(), e))?;
+
+    let file_path = path.to_string_lossy().to_string();
+
+    let mut composer = composer.write().unwrap();
+
+    let module = composer
+        .make_naga_module(NagaModuleDescriptor {
+            file_path: &file_path,
+            source: &shader_code,
+            ..Default::default()
+        })
+        .context("Failed to create Naga module from shader code")?;
+
+    // We don't need to validate, because wgpu runs the validator internally.
+    let validation_flags = ValidationFlags::empty();
+    let info = naga::valid::Validator::new(validation_flags, Capabilities::all())
+        .validate(&module)
+        .context("Failed to validate Naga module")?;
+
+    let shader_code = naga::back::wgsl::write_string(&module, &info, WriterFlags::empty())
+        .context("Failed to convert Naga module to WGSL string")?;
+
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+
     let pipeline = factory(device, shader_def, &shader_code);
 
     device
@@ -239,4 +284,35 @@ fn compile_file(
     };
 
     pipeline
+}
+
+fn create_composer() -> anyhow::Result<Composer> {
+    let shared_files = std::fs::read_dir(SHADER_SHADER_MODULES_FOLDER)
+        .expect("Failed to read shared shader modules directory");
+    let mut composer = Composer::default();
+
+    for entry in shared_files {
+        let entry = entry.expect("Failed to read entry in shared shader modules directory");
+        let path = entry.path();
+
+        if !path.is_file() && path.extension().map_or(false, |ext| ext != "wgsl") {
+            continue;
+        }
+
+        let source =
+            std::fs::read_to_string(&path).expect("Failed to read shared shader module file");
+
+        let file_path = path.to_string_lossy().to_string();
+
+        composer
+            .add_composable_module(ComposableModuleDescriptor {
+                source: &source,
+                file_path: &file_path,
+                language: ShaderLanguage::Wgsl,
+                ..Default::default()
+            })
+            .context(format!("Failed to add shared shader module: {}", file_path))?;
+    }
+
+    Ok(composer)
 }

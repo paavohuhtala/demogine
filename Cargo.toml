@@ -11,6 +11,8 @@ gltf = { version = "1.4.1", features = ["extras", "names"] }
 id-arena = "2.2.1"
 itertools = "0.13.0"
 log = "0.4.22"
+naga = { version = "25.0.1", features = ["wgsl-out"] }
+naga_oil = { git = "https://github.com/bevyengine/naga_oil.git", rev = "6eee1e6fa4d91bb1c1ecfdc072d33df5e7997d4d" }
 notify-debouncer-mini = "0.6.0"
 pollster = "0.4.0"
 pretty_env_logger = "0.5.0"
