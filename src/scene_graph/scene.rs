@@ -2,10 +2,10 @@ use glam::{Mat4, Quat, Vec3};
 use id_arena::Arena;
 use std::collections::HashMap;
 
-use crate::model::{Buffers, Instance, Model};
-use crate::scene::object3d::{Object3D, ObjectId};
-use crate::scene::scene_model::{SceneModel, SceneModelId};
-use crate::scene::transform::Transform;
+use crate::model::{Buffers, Model};
+use crate::scene_graph::object3d::{Object3D, ObjectId};
+use crate::scene_graph::scene_model::{SceneModel, SceneModelId};
+use crate::scene_graph::transform::Transform;
 
 pub struct Scene {
     pub objects: Arena<Object3D>,
@@ -109,37 +109,8 @@ impl Scene {
         object_id
     }
 
-    /// Collects all meshes into instance buffers
-    pub fn gather_instances(&mut self) {
-        // Update all transforms in hierarchical order
-        self.update_transforms();
-
-        // First, clear all existing instances from all models
-        for (_, model) in self.models.iter_mut() {
-            model.clear_instances();
-        }
-
-        // Iterate through all objects and collect instances for each model
-        for (_, object) in self.objects.iter() {
-            if let Some(model_id) = object.model_id {
-                // Get the world transformation matrix from the object's transform
-                let transform_matrix = *object.transform.get_world_matrix();
-
-                // Create an instance with the transformation matrix
-                let instance = Instance {
-                    model: transform_matrix,
-                };
-
-                // Add the instance to the corresponding model
-                if let Some(model) = self.models.get_mut(model_id) {
-                    model.add_instance(instance);
-                }
-            }
-        }
-    }
-
     /// Updates all object transforms in hierarchical order
-    fn update_transforms(&self) {
+    pub fn update_transforms(&self) {
         // Find all root objects (objects without parents)
         let root_objects: Vec<ObjectId> = self
             .objects

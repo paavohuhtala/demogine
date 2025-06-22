@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use wgpu::{
-    Device, MultisampleState, PipelineCompilationOptions, RenderPass, RenderPassDescriptor,
-    ShaderSource,
+    Device, MultisampleState, PipelineCompilationOptions, RenderPassDescriptor, ShaderSource,
 };
 
-use crate::{
-    passes::pass::Pass,
+use crate::rendering::{
     render_common::RenderCommon,
-    shader_loader::{PipelineCache, PipelineId, ShaderDefinition},
+    shader_loader::{PipelineCache, PipelineCacheBuilder, PipelineId, ShaderDefinition},
 };
 
 pub struct BackgroundPass {
@@ -25,13 +23,11 @@ pub struct BackgroundPassTextureViews {
     pub color: wgpu::TextureView,
 }
 
-impl Pass for BackgroundPass {
-    type TextureViews = BackgroundPassTextureViews;
-
-    fn create(
+impl BackgroundPass {
+    pub fn create(
         device: &Device,
         common: Arc<RenderCommon>,
-        cache_builder: &mut crate::shader_loader::PipelineCacheBuilder,
+        cache_builder: &mut PipelineCacheBuilder,
     ) -> anyhow::Result<BackgroundPass> {
         let global_uniform_bind_group = common.global_uniform.bind_group.clone();
 
@@ -96,15 +92,12 @@ impl Pass for BackgroundPass {
         })
     }
 
-    fn render<'a, F>(
+    pub fn render(
         &self,
-        texture_views: &Self::TextureViews,
+        texture_views: &BackgroundPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
         pipeline_cache: &PipelineCache,
-        render_callback: F,
-    ) where
-        F: FnOnce(&mut RenderPass) + 'a,
-    {
+    ) {
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Background Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -124,7 +117,6 @@ impl Pass for BackgroundPass {
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.global_uniform_bind_group, &[]);
-
-        render_callback(&mut render_pass);
+        render_pass.draw(0..3, 0..1);
     }
 }

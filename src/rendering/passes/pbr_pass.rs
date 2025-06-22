@@ -3,9 +3,10 @@ use wgpu::{
     RenderPassDescriptor, ShaderSource, StencilState,
 };
 
-use crate::{
-    model::{Instance, RENDER_MODEL_VBL},
-    passes::pass::Pass,
+use crate::rendering::{
+    instance::Instance,
+    render_common::RenderCommon,
+    render_model::RENDER_MODEL_VBL,
     shader_loader::{self, PipelineCache, PipelineId, ShaderDefinition},
     texture::DepthTexture,
 };
@@ -25,12 +26,10 @@ const DEFAULT_SHADER: ShaderDefinition = ShaderDefinition {
     path: "shader.wgsl",
 };
 
-impl Pass for PbrPass {
-    type TextureViews = PbrTextureViews;
-
-    fn create(
+impl PbrPass {
+    pub fn create(
         device: &wgpu::Device,
-        common: std::sync::Arc<crate::render_common::RenderCommon>,
+        common: std::sync::Arc<RenderCommon>,
         cache_builder: &mut shader_loader::PipelineCacheBuilder,
     ) -> anyhow::Result<Self>
     where
@@ -127,9 +126,9 @@ impl Pass for PbrPass {
         })
     }
 
-    fn render<'a, F>(
+    pub fn render<'a, F>(
         &self,
-        texture_views: &Self::TextureViews,
+        texture_views: &PbrTextureViews,
         encoder: &mut wgpu::CommandEncoder,
         pipeline_cache: &PipelineCache,
         render_callback: F,

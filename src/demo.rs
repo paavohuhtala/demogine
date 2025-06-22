@@ -1,10 +1,7 @@
 use anyhow::Context;
 use glam::{Quat, Vec3};
 
-use crate::{
-    camera::Camera,
-    scene::{ObjectId, Scene},
-};
+use crate::{camera::Camera, scene_graph::object3d::ObjectId, scene_graph::scene::Scene};
 
 pub struct DemoState {
     pub camera: Camera,

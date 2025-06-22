@@ -4,11 +4,12 @@ use wgpu::{
     ShaderModuleDescriptor, StoreOp, TextureView, VertexState,
 };
 
-use crate::{
-    model::{Instance, RENDER_MODEL_VBL},
-    passes::pass::Pass,
-    rendering::deferred::gbuffer::GBuffer,
-    shader_loader::{PipelineId, ShaderDefinition},
+use crate::rendering::{
+    deferred::gbuffer::GBuffer,
+    instance::Instance,
+    render_common::RenderCommon,
+    render_model::RENDER_MODEL_VBL,
+    shader_loader::{PipelineCache, PipelineCacheBuilder, PipelineId, ShaderDefinition},
     texture::DepthTexture,
 };
 
@@ -28,13 +29,11 @@ const SHADER_DEF: ShaderDefinition = ShaderDefinition {
     path: "deferred/geometry.wgsl",
 };
 
-impl Pass for GeometryPass {
-    type TextureViews = GeometryPassTextureViews;
-
-    fn create(
+impl GeometryPass {
+    pub fn create(
         device: &wgpu::Device,
-        common: std::sync::Arc<crate::render_common::RenderCommon>,
-        cache_builder: &mut crate::shader_loader::PipelineCacheBuilder,
+        common: std::sync::Arc<RenderCommon>,
+        cache_builder: &mut PipelineCacheBuilder,
     ) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -137,11 +136,11 @@ impl Pass for GeometryPass {
         })
     }
 
-    fn render<'a, F>(
+    pub fn render<'a, F>(
         &self,
-        texture_views: &Self::TextureViews,
+        texture_views: &GeometryPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &crate::shader_loader::PipelineCache,
+        pipeline_cache: &PipelineCache,
         render_callback: F,
     ) where
         F: FnOnce(&mut wgpu::RenderPass) + 'a,

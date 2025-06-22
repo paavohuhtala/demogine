@@ -1,3 +1,11 @@
-pub(crate) mod common;
-pub(crate) mod deferred;
-pub(crate) mod instance;
+pub mod common;
+pub mod deferred;
+pub mod global_uniform;
+pub mod instance;
+pub mod passes;
+pub mod render_camera;
+pub mod render_common;
+pub mod render_model;
+pub mod renderer;
+pub mod shader_loader;
+pub mod texture;

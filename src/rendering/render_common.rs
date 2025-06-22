@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use wgpu::SurfaceConfiguration;
 use winit::dpi::PhysicalSize;
 
-use crate::global_uniform::{GlobalUniform, GlobalUniformState};
+use crate::rendering::global_uniform::{GlobalUniform, GlobalUniformState};
 
 pub struct RenderCommon {
     pub output_surface_config: RwLock<SurfaceConfiguration>,

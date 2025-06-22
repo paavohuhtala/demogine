@@ -1,9 +1,9 @@
 use glam::Vec3;
 use id_arena::Id;
 
-use crate::scene::scene::Scene;
-use crate::scene::scene_model::SceneModelId;
-use crate::scene::transform::Transform;
+use crate::scene_graph::scene::Scene;
+use crate::scene_graph::scene_model::SceneModelId;
+use crate::scene_graph::transform::Transform;
 
 pub type ObjectId = Id<Object3D>;
 

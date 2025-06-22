@@ -1,7 +1,7 @@
 use wgpu::TextureFormat;
 
-use crate::{
-    rendering::common::{PhysicalSizeExt, Resolution},
+use crate::rendering::{
+    common::{PhysicalSizeExt, Resolution},
     texture::{DepthTexture, Texture},
 };
 

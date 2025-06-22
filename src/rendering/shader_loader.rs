@@ -22,8 +22,8 @@ use notify_debouncer_mini::{
 use pollster::block_on;
 use wgpu::{naga, PollType, RenderPipeline};
 
-const SHADER_FOLDER: &'static str = "src/shaders";
-const SHADER_SHADER_MODULES_FOLDER: &'static str = "src/shaders/shared";
+const SHADER_FOLDER: &'static str = "assets/shaders";
+const SHADER_SHADER_MODULES_FOLDER: &'static str = "assets/shaders/shared";
 
 type PipelineFactory = Box<
     dyn Sync
