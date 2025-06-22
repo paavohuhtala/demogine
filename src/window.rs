@@ -1,24 +1,25 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
-use glam::{Mat4, Quat, Vec2, Vec3};
-use itertools::Itertools;
-use rand::Rng;
+use glam::Vec2;
+use id_arena::Arena;
 use wgpu::CommandEncoderDescriptor;
 use winit::{
     application::ApplicationHandler, event::WindowEvent, event_loop::EventLoop, window::Window,
 };
 
 use crate::{
-    camera::{Camera, RenderCamera},
+    camera::RenderCamera,
+    demo::DemoState,
     global_uniform::GlobalUniformState,
-    model::{Instance, Model, RenderModel},
+    model::RenderModel,
     passes::{
         background_pass::{BackgroundPass, BackgroundPassTextureViews},
         pass::Pass,
         pbr_pass::{PbrPass, PbrTextureViews},
     },
     render_common::RenderCommon,
+    rendering::deferred::gbuffer::GBuffer,
     shader_loader::{PipelineCacheBuilder, ShaderLoader},
     texture::DepthTexture,
 };
@@ -30,13 +31,14 @@ struct GraphicsState {
     size: winit::dpi::PhysicalSize<u32>,
     window: Arc<Window>,
 
+    g_buffer: GBuffer,
+
     common: Arc<RenderCommon>,
     depth_texture: DepthTexture,
-    render_model: RenderModel,
+    render_models: Arena<RenderModel>,
 
     camera: RenderCamera,
 
-    instance_buffer: wgpu::Buffer,
     shader_loader: ShaderLoader,
 
     background_pass: BackgroundPass,
@@ -44,7 +46,7 @@ struct GraphicsState {
 }
 
 impl GraphicsState {
-    async fn new(window: Arc<Window>, game_state: &GameState) -> anyhow::Result<GraphicsState> {
+    async fn new(window: Arc<Window>, demo_state: &DemoState) -> anyhow::Result<GraphicsState> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -70,7 +72,7 @@ impl GraphicsState {
             .await
             .unwrap();
 
-        let camera = RenderCamera::new(&device, game_state.camera.clone(), size);
+        let camera = RenderCamera::new(&device, demo_state.camera.clone(), size);
 
         let common = RenderCommon::new(
             &device,
@@ -81,11 +83,7 @@ impl GraphicsState {
         );
         let common = Arc::new(common);
 
-        let depth_texture = {
-            let surface_config = common.output_surface_config.read().unwrap();
-            let surface_config = surface_config.deref();
-            DepthTexture::new(&device, surface_config, "Depth Texture")
-        };
+        let depth_texture = DepthTexture::new(&device, size, "Depth Texture");
 
         let mut cache_builder: PipelineCacheBuilder = PipelineCacheBuilder::new();
 
@@ -94,44 +92,41 @@ impl GraphicsState {
 
         let shader_loader = ShaderLoader::new(device.clone(), cache_builder);
 
-        let render_model = {
-            let (document, buffers, _images) = gltf::import("assets/spacefarjan.glb")?;
-            let ship: gltf::Mesh<'_> = document.meshes().next().context("No meshes in gltf")?;
-            let model = Model::from_gtlf(ship, &buffers).context("Failed to create model")?;
-            RenderModel::from_model(&device, model)
-        };
+        let g_buffer = GBuffer::new(&device, size);
 
-        let instance_buffer_descriptor = wgpu::BufferDescriptor {
-            label: Some("Instance Buffer"),
-            size: (std::mem::size_of::<Instance>() * game_state.instances.len()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        };
-
-        let instance_buffer = device.create_buffer(&instance_buffer_descriptor);
-
-        queue.write_buffer(
-            &instance_buffer,
-            0,
-            bytemuck::cast_slice(&game_state.instances),
-        );
+        let render_models = Arena::new();
 
         Ok(Self {
             window: window.clone(),
             surface,
             device,
             queue,
+            g_buffer,
             common,
             size,
-            render_model,
+            render_models,
             camera,
             depth_texture,
-            instance_buffer,
             shader_loader,
 
             background_pass,
             pbr_pass,
         })
+    }
+
+    pub fn load_models(&mut self, demo_state: &mut DemoState) -> anyhow::Result<()> {
+        for (_id, scene_model) in &mut demo_state.scene.models {
+            let render_model = RenderModel::from_model(&self.device, &scene_model.model);
+            let render_model_id = self.render_models.alloc(render_model);
+            scene_model.render_model = Some(render_model_id);
+            println!(
+                "Loaded model {} with {} primitives",
+                scene_model.name,
+                scene_model.model.primitives.len()
+            );
+        }
+
+        Ok(())
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -142,32 +137,31 @@ impl GraphicsState {
             self.size = new_size;
             config.width = new_size.width;
             config.height = new_size.height;
+            self.depth_texture.resize(&self.device, new_size);
             self.surface.configure(&self.device, &config);
-
-            self.depth_texture.resize(&self.device, &config);
-
             self.camera.update_resolution(new_size);
+            self.g_buffer.resize(new_size);
         }
-    }
-
-    fn update(&mut self, game_state: &GameState) {
-        self.camera.update_camera(&game_state.camera);
     }
 
     fn render(
         &mut self,
-        game_state: &GameState,
+        demo_state: &mut DemoState,
         _mouse_pos: Vec2,
     ) -> Result<(), wgpu::SurfaceError> {
         self.shader_loader
             .load_pending_shaders()
             .expect("Failed to load pending shaders");
 
+        self.camera.update_camera(&demo_state.camera);
         self.camera.update_uniform_buffer(&self.queue);
         self.common.global_uniform.update(
             &self.queue,
-            GlobalUniformState::new(self.size, game_state.start_time.elapsed().as_secs_f32()),
+            GlobalUniformState::new(self.size, demo_state.start_time.elapsed().as_secs_f32()),
         );
+
+        // TODO: Update transform matrices
+        demo_state.scene.gather_instances();
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -193,7 +187,7 @@ impl GraphicsState {
             },
         );
 
-        if false {
+        if true {
             self.pbr_pass.render(
                 &PbrTextureViews {
                     color: view.clone(),
@@ -202,18 +196,51 @@ impl GraphicsState {
                 &mut encoder,
                 pipeline_cache,
                 |render_pass| {
-                    render_pass.set_vertex_buffer(0, self.render_model.vertex_buffer.slice(..));
-                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    for (_id, scene_model) in &demo_state.scene.models {
+                        if !scene_model.instances().should_render() {
+                            continue;
+                        }
 
-                    render_pass.set_index_buffer(
-                        self.render_model.index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
-                    );
-                    render_pass.draw_indexed(
-                        0..self.render_model.num_indices as u32,
-                        0,
-                        0..game_state.instances.len() as u32,
-                    );
+                        let render_model_id = scene_model
+                            .render_model
+                            .with_context(|| {
+                                format!("Scene model has no render model: {}", scene_model.name)
+                            })
+                            .unwrap();
+
+                        let render_model = self
+                            .render_models
+                            .get(render_model_id)
+                            .with_context(|| {
+                                format!(
+                                    "Render model not found in graphics state: {}",
+                                    scene_model.name
+                                )
+                            })
+                            .unwrap();
+
+                        // Update GPU-side instance buffer
+                        // This could probably be done earlier in the frame, or even in a separate thread
+                        scene_model
+                            .instances()
+                            .write_to_buffer(&self.queue, &render_model.instance_buffer);
+
+                        render_model.instance_buffer.bind(render_pass);
+
+                        for primitive in render_model.primitives.iter() {
+                            render_pass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(
+                                primitive.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+
+                            render_pass.draw_indexed(
+                                0..primitive.num_indices,
+                                0,
+                                0..scene_model.instances().len() as u32,
+                            );
+                        }
+                    }
                 },
             );
         }
@@ -228,61 +255,17 @@ impl GraphicsState {
     }
 }
 
-struct GameState {
-    instances: Vec<Instance>,
-    camera: Camera,
-    start_time: std::time::Instant,
-}
-
-impl GameState {
-    fn new() -> Self {
-        let camera = Camera {
-            eye: Vec3::new(10.0, 10.0, 10.0),
-            target: Vec3::ZERO,
-            up: Vec3::Y,
-        };
-
-        let rng = rand::thread_rng();
-        let instances = (0..10)
-            .flat_map(|i| {
-                let mut rng = rng.clone();
-                (0..10).map(move |j| {
-                    let position = Vec3::new(i as f32 * 2.0, 0.0, j as f32 * 2.0);
-                    let rotation = Vec3::new(
-                        rng.gen_range(0.0..std::f32::consts::PI),
-                        rng.gen_range(0.0..std::f32::consts::PI),
-                        rng.gen_range(0.0..std::f32::consts::PI),
-                    );
-
-                    let model = Mat4::from_rotation_translation(
-                        Quat::from_euler(glam::EulerRot::XYZ, rotation.x, rotation.y, rotation.z),
-                        position,
-                    );
-
-                    Instance { model }
-                })
-            })
-            .collect_vec();
-
-        Self {
-            instances,
-            camera,
-            start_time: std::time::Instant::now(),
-        }
-    }
-}
-
 struct App {
     graphics_state: Option<GraphicsState>,
-    game_state: GameState,
+    demo_state: DemoState,
     mouse_pos: Vec2,
 }
 
 impl App {
-    fn from_game_state(game_state: GameState) -> Self {
+    fn from_demo_state(demo_state: DemoState) -> Self {
         Self {
             graphics_state: None,
-            game_state,
+            demo_state,
             mouse_pos: Vec2::ZERO,
         }
     }
@@ -293,8 +276,14 @@ impl ApplicationHandler for App {
         let window_attributes = Window::default_attributes();
         let window = event_loop.create_window(window_attributes).unwrap();
         let state =
-            pollster::block_on(GraphicsState::new(Arc::new(window), &self.game_state)).unwrap();
+            pollster::block_on(GraphicsState::new(Arc::new(window), &self.demo_state)).unwrap();
         self.graphics_state = Some(state);
+
+        self.graphics_state
+            .as_mut()
+            .unwrap()
+            .load_models(&mut self.demo_state)
+            .unwrap();
     }
 
     fn window_event(
@@ -313,9 +302,10 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 let state = self.graphics_state.as_mut().unwrap();
                 state.window.request_redraw();
-                state.update(&self.game_state);
 
-                match state.render(&self.game_state, self.mouse_pos) {
+                self.demo_state.update();
+
+                match state.render(&mut self.demo_state, self.mouse_pos) {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         state.resize(state.size);
@@ -342,8 +332,8 @@ impl ApplicationHandler for App {
 
 pub async fn run() -> anyhow::Result<()> {
     let event_loop = EventLoop::new().context("Failed to create event loop")?;
-    let game_state = GameState::new();
-    let mut app = App::from_game_state(game_state);
+    let demo_state = DemoState::new().context("Failed to create game state")?;
+    let mut app = App::from_demo_state(demo_state);
     event_loop.run_app(&mut app)?;
 
     Ok(())

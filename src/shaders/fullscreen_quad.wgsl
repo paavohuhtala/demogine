@@ -1,14 +1,16 @@
 
-#import shared::fullscreen::VertexOutput;
+#import shared::fullscreen::VertexOutput
+#import shared::globals::GlobalUniforms
+#import shared::fullscreen::vs_main as fullscreen_vs_main
 
 @group(0) @binding(0)
-var<uniform> globals: shared::globals::GlobalUniforms;
+var<uniform> globals: GlobalUniforms;
 
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
 ) -> VertexOutput {
-    return shared::fullscreen::vs_main(vertex_index);
+    return fullscreen_vs_main(vertex_index);
 }
 
 @fragment

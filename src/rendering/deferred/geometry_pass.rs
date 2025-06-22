@@ -1,0 +1,186 @@
+use wgpu::{
+    LoadOp, PipelineCompilationOptions, RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+    ShaderModuleDescriptor, StoreOp, TextureView, VertexState,
+};
+
+use crate::{
+    model::{Instance, RENDER_MODEL_VBL},
+    passes::pass::Pass,
+    rendering::deferred::gbuffer::GBuffer,
+    shader_loader::{PipelineId, ShaderDefinition},
+    texture::DepthTexture,
+};
+
+pub struct GeometryPass {
+    pipeline_id: PipelineId,
+    camera_bind_group: wgpu::BindGroup,
+}
+
+pub struct GeometryPassTextureViews {
+    pub color_roughness: TextureView,
+    pub normal_metallic: TextureView,
+    pub depth: TextureView,
+}
+
+const SHADER_DEF: ShaderDefinition = ShaderDefinition {
+    name: "Geometry pass shader",
+    path: "deferred/geometry.wgsl",
+};
+
+impl Pass for GeometryPass {
+    type TextureViews = GeometryPassTextureViews;
+
+    fn create(
+        device: &wgpu::Device,
+        common: std::sync::Arc<crate::render_common::RenderCommon>,
+        cache_builder: &mut crate::shader_loader::PipelineCacheBuilder,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: common.camera_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render pipeline layout"),
+                bind_group_layouts: &[&camera_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let pipeline_id = cache_builder.add_shader(
+            SHADER_DEF,
+            Box::new(
+                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
+                    let shader = device.create_shader_module(ShaderModuleDescriptor {
+                        label: Some(shader_def.name),
+                        source: wgpu::ShaderSource::Wgsl(source.into()),
+                    });
+
+                    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+                        label: Some("Geometry pass render pipeline"),
+                        layout: Some(&render_pipeline_layout),
+                        vertex: VertexState {
+                            module: &shader,
+                            entry_point: Some("vs_main"),
+                            buffers: &[RENDER_MODEL_VBL, Instance::descriptor()],
+                            compilation_options: PipelineCompilationOptions::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fs_main"),
+                            targets: &[
+                                Some(wgpu::ColorTargetState {
+                                    format: GBuffer::COLOR_ROUGHNESS_FORMAT,
+                                    blend: Some(wgpu::BlendState::REPLACE),
+                                    write_mask: wgpu::ColorWrites::ALL,
+                                }),
+                                Some(wgpu::ColorTargetState {
+                                    format: GBuffer::NORMAL_METALLIC_FORMAT,
+                                    blend: Some(wgpu::BlendState::REPLACE),
+                                    write_mask: wgpu::ColorWrites::ALL,
+                                }),
+                            ],
+                            compilation_options: PipelineCompilationOptions::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Cw,
+                            cull_mode: Some(wgpu::Face::Back),
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            unclipped_depth: false,
+                            conservative: false,
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: DepthTexture::DEPTH_FORMAT,
+                            depth_write_enabled: true,
+                            depth_compare: wgpu::CompareFunction::Less,
+                            stencil: wgpu::StencilState::default(),
+                            bias: wgpu::DepthBiasState::default(),
+                        }),
+                        multisample: wgpu::MultisampleState::default(),
+                        multiview: None,
+                        cache: None,
+                    });
+
+                    Ok(pipeline)
+                },
+            ),
+        );
+
+        Ok(GeometryPass {
+            pipeline_id,
+            camera_bind_group,
+        })
+    }
+
+    fn render<'a, F>(
+        &self,
+        texture_views: &Self::TextureViews,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline_cache: &crate::shader_loader::PipelineCache,
+        render_callback: F,
+    ) where
+        F: FnOnce(&mut wgpu::RenderPass) + 'a,
+    {
+        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("Geometry pass"),
+            color_attachments: &[
+                Some(RenderPassColorAttachment {
+                    view: &texture_views.color_roughness,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: LoadOp::Clear(wgpu::Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                }),
+                Some(RenderPassColorAttachment {
+                    view: &texture_views.normal_metallic,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: LoadOp::Clear(wgpu::Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                }),
+            ],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &texture_views.depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        let pipeline = pipeline_cache.get(self.pipeline_id);
+        render_pass.set_pipeline(pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_callback(&mut render_pass);
+    }
+}
