@@ -22,11 +22,24 @@ impl DemoState {
 
         let (document, buffers, _images) = gltf::import("assets/can/can.gltf")?;
         let can_scene = document.scenes().next().context("No scenes in gltf")?;
-        scene.spawn_gltf_scene(&buffers, &can_scene);
+
+        for x in -25..25 {
+            for z in -25..25 {
+                let translation = Vec3::new(x as f32 * 0.5, 0.0, z as f32 * 0.5);
+                let rotation = Quat::from_axis_angle(Vec3::Y, (x + z) as f32 * 0.1);
+                let scale = 0.5;
+
+                let can = scene
+                    .spawn_gltf_scene(&buffers, &can_scene)
+                    .expect("Expected scene to contain a root node");
+
+                scene.set_object_transform(can, translation, rotation, scale);
+            }
+        }
 
         let can = scene
-            .get_object_by_name("Tolkki")
-            .expect("Can object not found");
+            .spawn_gltf_scene(&buffers, &can_scene)
+            .expect("Expected scene to contain a root node");
 
         Ok(Self {
             camera,

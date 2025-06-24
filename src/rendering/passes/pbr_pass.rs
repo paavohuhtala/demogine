@@ -1,10 +1,12 @@
+// Temporary placeholder render pass while I'm working on deferred rendering
+// This is called "PBR pass" despite doing nothing PBR-related
+
 use wgpu::{
     DepthBiasState, Device, MultisampleState, PipelineCompilationOptions, RenderPass,
     RenderPassDescriptor, ShaderSource, StencilState,
 };
 
 use crate::rendering::{
-    instance::Instance,
     render_common::RenderCommon,
     render_model::RENDER_MODEL_VBL,
     shader_loader::{self, PipelineCache, PipelineId, ShaderDefinition},
@@ -59,10 +61,25 @@ impl PbrPass {
             }],
         });
 
+        let instance_storage_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Instance storage bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &instance_storage_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -81,7 +98,7 @@ impl PbrPass {
                         vertex: wgpu::VertexState {
                             module: &shader,
                             entry_point: Some("vs_main"),
-                            buffers: &[RENDER_MODEL_VBL, Instance::descriptor()],
+                            buffers: &[RENDER_MODEL_VBL],
                             compilation_options: PipelineCompilationOptions::default(),
                         },
                         fragment: Some(wgpu::FragmentState {
@@ -131,6 +148,7 @@ impl PbrPass {
         texture_views: &PbrTextureViews,
         encoder: &mut wgpu::CommandEncoder,
         pipeline_cache: &PipelineCache,
+        storage_bind_group: &wgpu::BindGroup,
         render_callback: F,
     ) where
         F: FnOnce(&mut RenderPass) + 'a,
@@ -160,7 +178,7 @@ impl PbrPass {
         let pipeline = pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-
+        render_pass.set_bind_group(1, storage_bind_group, &[]);
         render_callback(&mut render_pass);
     }
 }

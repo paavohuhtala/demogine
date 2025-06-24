@@ -11,6 +11,7 @@ pub struct Transform {
     world_matrix: RefCell<glam::Mat4>,
     local_dirty: Cell<bool>,
     world_dirty: Cell<bool>,
+    has_changed_since_last_update: Cell<bool>,
 }
 
 impl Transform {
@@ -23,6 +24,7 @@ impl Transform {
             world_matrix: RefCell::new(Mat4::IDENTITY),
             local_dirty: Cell::new(true),
             world_dirty: Cell::new(true),
+            has_changed_since_last_update: Cell::new(true),
         }
     }
 
@@ -36,7 +38,8 @@ impl Transform {
 
             self.local_matrix.replace(matrix);
             self.local_dirty.set(false);
-            self.world_dirty.set(true);
+            // Not sure about this one - invalidate_local also sets world_dirty
+            self.invalidate_world();
         }
 
         self.local_matrix.borrow()
@@ -49,11 +52,13 @@ impl Transform {
     pub fn set_world_matrix(&self, world_matrix: Mat4) {
         self.world_matrix.replace(world_matrix);
         self.world_dirty.set(false);
+        self.has_changed_since_last_update.set(true);
     }
 
     pub fn invalidate_local(&self) {
         self.local_dirty.set(true);
         self.world_dirty.set(true);
+        self.has_changed_since_last_update.set(true);
     }
 
     pub fn invalidate_world(&self) {
@@ -114,5 +119,13 @@ impl Transform {
     #[allow(dead_code)]
     pub fn scale(&self) -> f32 {
         self.scale
+    }
+
+    pub fn reset_flags(&self) {
+        self.has_changed_since_last_update.set(false);
+    }
+
+    pub fn has_changed(&self) -> bool {
+        self.has_changed_since_last_update.get()
     }
 }

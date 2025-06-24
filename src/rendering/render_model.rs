@@ -3,10 +3,7 @@ use std::mem::offset_of;
 use id_arena::Id;
 use wgpu::util::DeviceExt;
 
-use crate::{
-    model::{Model, ModelPrimitive, Vertex},
-    rendering::instance::{Instance, InstanceBuffer, Instances},
-};
+use crate::model::{Model, ModelPrimitive, Vertex};
 
 pub type RenderModelId = Id<RenderModel>;
 
@@ -49,8 +46,6 @@ impl RenderPrimitive {
 
 pub struct RenderModel {
     pub primitives: Vec<RenderPrimitive>,
-    pub instance_buffer: InstanceBuffer,
-    pub instances: Instances,
 }
 
 impl RenderModel {
@@ -60,25 +55,8 @@ impl RenderModel {
             .iter()
             .map(|primitive| RenderPrimitive::from_primitive(device, model, primitive))
             .collect();
-        let instance_buffer = InstanceBuffer::new(device, model.name.clone());
 
-        RenderModel {
-            primitives,
-            instance_buffer,
-            instances: Instances::new(),
-        }
-    }
-
-    pub fn instances(&self) -> &Instances {
-        &self.instances
-    }
-
-    pub fn add_instance(&mut self, instance: Instance) {
-        self.instances.add(instance);
-    }
-
-    pub fn clear_instances(&mut self) {
-        self.instances.clear();
+        RenderModel { primitives }
     }
 }
 
@@ -108,28 +86,3 @@ pub const RENDER_MODEL_VBL: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuff
         },
     ],
 };
-
-pub fn render_model_instances(
-    render_pass: &mut wgpu::RenderPass<'_>,
-    queue: &wgpu::Queue,
-    render_model: &RenderModel,
-) {
-    // Update GPU-side instance buffer
-    // This could probably be done earlier in the frame, or even in a separate thread
-    render_model
-        .instances()
-        .write_to_buffer(queue, &render_model.instance_buffer);
-
-    render_model.instance_buffer.bind(render_pass);
-
-    for primitive in render_model.primitives.iter() {
-        render_pass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(primitive.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        render_pass.draw_indexed(
-            0..primitive.num_indices,
-            0,
-            0..render_model.instances().len() as u32,
-        );
-    }
-}

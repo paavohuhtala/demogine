@@ -248,13 +248,27 @@ fn compile_file(
 
     let mut composer = composer.write().unwrap();
 
-    let module = composer
-        .make_naga_module(NagaModuleDescriptor {
-            file_path: &file_path,
-            source: &shader_code,
-            ..Default::default()
-        })
-        .context("Failed to create Naga module from shader code")?;
+    let module = composer.make_naga_module(NagaModuleDescriptor {
+        file_path: &file_path,
+        source: &shader_code,
+        ..Default::default()
+    });
+
+    let module = match module {
+        Ok(module) => module,
+        Err(e) => {
+            println!(
+                "Failed to create Naga module for shader {}:\n{}",
+                shader_def.name,
+                e.emit_to_string(&composer)
+            );
+            return Err(anyhow::anyhow!(
+                "Failed to create Naga module for shader {}: {}",
+                shader_def.name,
+                e
+            ));
+        }
+    };
 
     // We don't need to validate, because wgpu runs the validator internally.
     let validation_flags = ValidationFlags::empty();

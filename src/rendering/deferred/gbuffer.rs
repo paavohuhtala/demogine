@@ -9,7 +9,7 @@ pub struct GBuffer {
     device: wgpu::Device,
 
     /// In 8-bit sRGB. RGB for base color, A for roughness.
-    pub color_rougness: Texture,
+    pub color_roughness: Texture,
     /// In 16-bit float. RGB for normal, A for metallic.
     pub normal_metallic: Texture,
     // 32-bit float depth texture
@@ -27,7 +27,7 @@ impl GBuffer {
 
         Self {
             device: device.clone(),
-            color_rougness: color_roughness,
+            color_roughness: color_roughness,
             normal_metallic,
             depth,
         }
@@ -76,7 +76,7 @@ impl GBuffer {
     }
 
     pub fn resize(&mut self, size: Resolution) {
-        self.color_rougness.resize(&self.device, size);
+        self.color_roughness.resize(&self.device, size);
         self.normal_metallic.resize(&self.device, size);
         self.depth.resize(&self.device, size);
     }

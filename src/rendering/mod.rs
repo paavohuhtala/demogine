@@ -1,7 +1,8 @@
 pub mod common;
 pub mod deferred;
 pub mod global_uniform;
-pub mod instance;
+mod imgui_renderer;
+pub mod instance_manager;
 pub mod passes;
 pub mod render_camera;
 pub mod render_common;

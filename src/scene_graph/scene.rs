@@ -47,10 +47,14 @@ impl Scene {
         self.models.alloc(model)
     }
 
-    pub fn spawn_gltf_scene(&mut self, buffers: Buffers, scene: &gltf::Scene) {
+    pub fn spawn_gltf_scene(&mut self, buffers: Buffers, scene: &gltf::Scene) -> Option<ObjectId> {
+        let mut last_object_id = None;
+
         for node in scene.nodes() {
-            self.spawn_gltf_node(buffers, &node, None);
+            last_object_id = Some(self.spawn_gltf_node(buffers, &node, None));
         }
+
+        last_object_id
     }
 
     fn spawn_gltf_node(
@@ -64,7 +68,6 @@ impl Scene {
         object.name = node_name.clone();
         let (translation, rotation, scale) = node.transform().decomposed();
 
-        // Set all transform properties at once to avoid multiple invalidations
         object.transform.set_transform(
             translation.into(),
             Quat::from_array(rotation),
@@ -110,19 +113,15 @@ impl Scene {
     }
 
     /// Updates all object transforms in hierarchical order
-    pub fn update_transforms(&self) {
+    fn update_transforms(&self) {
         // Find all root objects (objects without parents)
-        let root_objects: Vec<ObjectId> = self
-            .objects
-            .iter()
-            .filter_map(|(id, object)| {
-                if object.parent_id.is_none() {
-                    Some(id)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let root_objects = self.objects.iter().filter_map(|(id, object)| {
+            if object.parent_id.is_none() {
+                Some(id)
+            } else {
+                None
+            }
+        });
 
         // Update transforms starting from root objects
         for root_id in root_objects {
@@ -226,5 +225,16 @@ impl Scene {
     #[allow(dead_code)]
     pub fn get_object_transform(&self, object_id: ObjectId) -> Option<&Transform> {
         self.objects.get(object_id).map(|object| &object.transform)
+    }
+
+    pub fn early_update(&mut self) {
+        // TODO: fork or replace id-arena to support parallel iteration
+        for (_, object) in self.objects.iter() {
+            object.transform.reset_flags();
+        }
+    }
+
+    pub fn late_update(&mut self) {
+        self.update_transforms();
     }
 }
