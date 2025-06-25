@@ -3,6 +3,7 @@ use id_arena::Arena;
 use std::collections::HashMap;
 
 use crate::model::{Buffers, Model};
+use crate::rendering::instancing::InstanceType;
 use crate::scene_graph::object3d::{Object3D, ObjectId};
 use crate::scene_graph::scene_model::{SceneModel, SceneModelId};
 use crate::scene_graph::transform::Transform;
@@ -36,6 +37,7 @@ impl Scene {
         self.objects.get_mut(id)
     }
 
+    #[allow(dead_code)]
     pub fn get_object_by_name(&self, name: &str) -> Option<ObjectId> {
         self.objects
             .iter()
@@ -47,11 +49,16 @@ impl Scene {
         self.models.alloc(model)
     }
 
-    pub fn spawn_gltf_scene(&mut self, buffers: Buffers, scene: &gltf::Scene) -> Option<ObjectId> {
+    pub fn spawn_gltf_scene(
+        &mut self,
+        buffers: Buffers,
+        scene: &gltf::Scene,
+        instance_type: InstanceType,
+    ) -> Option<ObjectId> {
         let mut last_object_id = None;
 
         for node in scene.nodes() {
-            last_object_id = Some(self.spawn_gltf_node(buffers, &node, None));
+            last_object_id = Some(self.spawn_gltf_node(buffers, &node, None, instance_type));
         }
 
         last_object_id
@@ -62,6 +69,7 @@ impl Scene {
         buffers: Buffers,
         node: &gltf::Node,
         parent: Option<ObjectId>,
+        instance_type: InstanceType,
     ) -> ObjectId {
         let mut object = Object3D::default();
         let node_name = node.name().unwrap_or("Unnamed").to_string();
@@ -73,6 +81,8 @@ impl Scene {
             Quat::from_array(rotation),
             scale[0], // Assume uniform scale for simplicity
         );
+
+        object.instance_type = instance_type;
 
         if let Some(mesh) = node.mesh() {
             let mesh_index = mesh.index();
@@ -106,7 +116,7 @@ impl Scene {
         }
 
         for child in node.children() {
-            self.spawn_gltf_node(buffers, &child, Some(object_id));
+            self.spawn_gltf_node(buffers, &child, Some(object_id), instance_type);
         }
 
         object_id

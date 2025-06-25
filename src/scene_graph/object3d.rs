@@ -1,6 +1,7 @@
 use glam::Vec3;
 use id_arena::Id;
 
+use crate::rendering::instancing::InstanceType;
 use crate::scene_graph::scene::Scene;
 use crate::scene_graph::scene_model::SceneModelId;
 use crate::scene_graph::transform::Transform;
@@ -11,8 +12,10 @@ pub struct Object3D {
     pub name: String,
     pub transform: Transform,
     pub model_id: Option<SceneModelId>,
+    pub instance_type: InstanceType,
     pub parent_id: Option<ObjectId>,
     pub child_ids: Vec<ObjectId>,
+    pub enabled: bool,
 }
 
 impl Object3D {
@@ -38,8 +41,10 @@ impl Default for Object3D {
             name: String::new(),
             transform: Transform::from_translation(Vec3::ZERO),
             model_id: None,
+            instance_type: InstanceType::default(),
             parent_id: None,
             child_ids: Vec::new(),
+            enabled: true,
         }
     }
 }

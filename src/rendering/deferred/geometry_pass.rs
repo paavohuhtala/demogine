@@ -148,14 +148,11 @@ impl GeometryPass {
             pipeline_id,
             camera_bind_group,
         })
-    }
-
-    pub fn render<'a, F>(
+    }    pub fn render<'a, F>(
         &self,
         texture_views: &GeometryPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
         pipeline_cache: &PipelineCache,
-        storage_bind_group: &wgpu::BindGroup,
         render_callback: F,
     ) where
         F: FnOnce(&mut wgpu::RenderPass) + 'a,
@@ -190,12 +187,9 @@ impl GeometryPass {
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
-        });
-
-        let pipeline = pipeline_cache.get(self.pipeline_id);
+        });        let pipeline = pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, storage_bind_group, &[]);
         render_callback(&mut render_pass);
     }
 }

@@ -24,6 +24,7 @@ struct App {
     mouse_pos: Vec2,
     imgui: Option<ImguiState>,
     last_frame: Instant,
+    frame_time_ms: f32,
 }
 
 impl App {
@@ -34,6 +35,7 @@ impl App {
             mouse_pos: Vec2::ZERO,
             imgui: None,
             last_frame: Instant::now(),
+            frame_time_ms: 0.0,
         }
     }
 
@@ -60,6 +62,22 @@ impl App {
         context.set_ini_filename(None);
 
         self.imgui = Some(ImguiState { context, platform });
+    }
+
+    fn show_frame_time_overlay(ui: &imgui::Ui, frame_time_ms: f32) {
+        let window_size = ui.io().display_size;
+        let overlay_pos = [window_size[0] - 120.0, 10.0];
+
+        ui.window("Frame Time")
+            .position(overlay_pos, imgui::Condition::Always)
+            .size([110.0, 60.0], imgui::Condition::Always)
+            .no_decoration()
+            .no_inputs()
+            .bg_alpha(0.8)
+            .build(|| {
+                ui.text(format!("Frame: {:.2} ms", frame_time_ms));
+                ui.text(format!("FPS: {:.0}", 1000.0 / frame_time_ms.max(0.001)));
+            });
     }
 }
 
@@ -101,6 +119,7 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 let delta_time = self.last_frame.elapsed();
                 let now = Instant::now();
+                self.frame_time_ms = delta_time.as_secs_f32() * 1000.0;
                 imgui.context.io_mut().update_delta_time(delta_time);
                 self.last_frame = now;
 
@@ -111,8 +130,10 @@ impl ApplicationHandler for App {
                     .platform
                     .prepare_frame(imgui.context.io_mut(), &renderer.window)
                     .expect("Failed to prepare Imgui frame");
-
                 let ui = imgui.context.new_frame();
+
+                let frame_time_ms = self.frame_time_ms;
+                Self::show_frame_time_overlay(&ui, frame_time_ms);
 
                 engine::update(&mut self.demo_state, renderer, ui)
                     .expect("Error during engine::update");

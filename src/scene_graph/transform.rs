@@ -98,7 +98,6 @@ impl Transform {
         self.invalidate_local();
     }
 
-    #[allow(dead_code)]
     pub fn set_transform(&mut self, translation: Vec3, rotation: Quat, scale: f32) {
         self.translation = translation;
         self.rotation = rotation;
@@ -125,6 +124,7 @@ impl Transform {
         self.has_changed_since_last_update.set(false);
     }
 
+    #[allow(dead_code)]
     pub fn has_changed(&self) -> bool {
         self.has_changed_since_last_update.get()
     }

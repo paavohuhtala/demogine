@@ -148,7 +148,6 @@ impl PbrPass {
         texture_views: &PbrTextureViews,
         encoder: &mut wgpu::CommandEncoder,
         pipeline_cache: &PipelineCache,
-        storage_bind_group: &wgpu::BindGroup,
         render_callback: F,
     ) where
         F: FnOnce(&mut RenderPass) + 'a,
@@ -174,11 +173,9 @@ impl PbrPass {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
-
         let pipeline = pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, storage_bind_group, &[]);
         render_callback(&mut render_pass);
     }
 }

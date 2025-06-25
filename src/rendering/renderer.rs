@@ -14,7 +14,7 @@ use crate::{
         },
         global_uniform::GlobalUniformState,
         imgui_renderer::{create_imgui_renderer, ImguiRendererState},
-        instance_manager::{render_batch, InstanceManager},
+        instancing::{get_bind_group_for_batch, render_batch, InstanceManager},
         passes::{
             background_pass::{BackgroundPass, BackgroundPassTextureViews},
             pbr_pass::{PbrPass, PbrTextureViews},
@@ -196,7 +196,6 @@ impl Renderer {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-
         let pipeline_cache = &self.shader_loader.cache;
 
         self.background_pass.render(
@@ -207,8 +206,6 @@ impl Renderer {
             pipeline_cache,
         );
 
-        let instance_bind_group = self.instance_manager.bind_group();
-
         self.pbr_pass.render(
             &PbrTextureViews {
                 color: view.clone(),
@@ -216,13 +213,16 @@ impl Renderer {
             },
             &mut encoder,
             pipeline_cache,
-            instance_bind_group,
             |render_pass| {
-                for batch in self.instance_manager.batches() {
+                for batch in self.instance_manager.all_batches() {
                     let render_model = self
                         .render_models
                         .get(batch.render_model_id)
                         .expect("Render model not found");
+
+                    let bind_group = get_bind_group_for_batch(&self.instance_manager, batch);
+                    render_pass.set_bind_group(1, bind_group, &[]);
+
                     render_batch(render_pass, render_model, batch);
                 }
             },
@@ -237,13 +237,16 @@ impl Renderer {
             },
             &mut encoder,
             pipeline_cache,
-            instance_bind_group,
             |render_pass| {
-                for batch in self.instance_manager.batches() {
+                for batch in self.instance_manager.all_batches() {
                     let render_model = self
                         .render_models
                         .get(batch.render_model_id)
                         .expect("Render model not found");
+
+                    let bind_group = get_bind_group_for_batch(&self.instance_manager, batch);
+                    render_pass.set_bind_group(1, bind_group, &[]);
+
                     render_batch(render_pass, render_model, batch);
                 }
             },
@@ -277,6 +280,8 @@ impl Renderer {
 
         let command_buffer = encoder.finish();
         self.queue.submit([command_buffer]);
+
+        self.window.pre_present_notify();
         output.present();
     }
 }
