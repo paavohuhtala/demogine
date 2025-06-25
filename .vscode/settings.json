@@ -1,7 +1,7 @@
 {
   "editor.formatOnSave": true,
   "wgsl-analyzer.customImports": {
-    "shared::camera": "file://src/shaders/shared/camera.wgsl",
-    "shared::globals": "file://src/shaders/shared/globals.wgsl"
+    "shared::camera": "file://assets/shaders/shared/camera.wgsl",
+    "shared::globals": "file://assets/shaders/shared/globals.wgsl"
   }
 }

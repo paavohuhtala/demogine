@@ -3,6 +3,7 @@ use anyhow::Result;
 mod camera;
 mod demo;
 mod engine;
+mod math;
 mod model;
 mod rendering;
 mod scene_graph;
