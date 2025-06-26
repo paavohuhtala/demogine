@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use id_arena::Arena;
 use wgpu::CommandEncoderDescriptor;
 use winit::window::Window;
 
 use crate::{
+    asset_pipeline::mesh_baker::BakedMeshes,
     demo::DemoState,
+    math::frustum::Frustum,
     rendering::{
         common::Resolution,
         deferred::{
@@ -14,14 +15,14 @@ use crate::{
         },
         global_uniform::GlobalUniformState,
         imgui_renderer::{create_imgui_renderer, ImguiRendererState},
-        instancing::{get_bind_group_for_batch, render_batch, InstanceManager},
+        instancing::InstanceManager,
+        mesh_buffers::MeshBuffers,
         passes::{
             background_pass::{BackgroundPass, BackgroundPassTextureViews},
             pbr_pass::{PbrPass, PbrTextureViews},
         },
         render_camera::RenderCamera,
         render_common::RenderCommon,
-        render_model::RenderModel,
         shader_loader::{PipelineCacheBuilder, ShaderLoader},
         texture::DepthTexture,
     },
@@ -37,11 +38,11 @@ pub struct Renderer {
     g_buffer: GBuffer,
     pub common: Arc<RenderCommon>,
     depth_texture: DepthTexture,
-    render_models: Arena<RenderModel>,
     camera: RenderCamera,
     shader_loader: ShaderLoader,
     instance_manager: InstanceManager,
     imgui: ImguiRendererState,
+    mesh_buffers: MeshBuffers,
 
     background_pass: BackgroundPass,
     pbr_pass: PbrPass,
@@ -52,6 +53,7 @@ impl Renderer {
     pub async fn new(
         window: Arc<Window>,
         demo_state: &DemoState,
+        baked_primitives: &BakedMeshes,
         imgui_context: &mut imgui::Context,
     ) -> anyhow::Result<Renderer> {
         let size = window.inner_size();
@@ -70,7 +72,8 @@ impl Renderer {
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::MULTI_DRAW_INDIRECT
+                    | wgpu::Features::INDIRECT_FIRST_INSTANCE,
                 required_limits: wgpu::Limits::default(),
                 label: None,
                 memory_hints: Default::default(),
@@ -92,18 +95,22 @@ impl Renderer {
 
         let depth_texture = DepthTexture::new(&device, size, "Depth Texture");
 
-        let mut cache_builder: PipelineCacheBuilder = PipelineCacheBuilder::new();
+        let mut render_pipeline_cache_builder = PipelineCacheBuilder::new();
 
-        let background_pass = BackgroundPass::create(&device, common.clone(), &mut cache_builder)?;
-        let pbr_pass = PbrPass::create(&device, common.clone(), &mut cache_builder)?;
-        let geometry_pass = GeometryPass::create(&device, common.clone(), &mut cache_builder)?;
+        let background_pass =
+            BackgroundPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
+        let pbr_pass =
+            PbrPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
+        let geometry_pass =
+            GeometryPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
 
-        let shader_loader = ShaderLoader::new(device.clone(), cache_builder);
+        let shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
 
         let g_buffer = GBuffer::new(&device, size);
-        let render_models = Arena::new();
 
-        let instance_manager = InstanceManager::new(&device);
+        let mesh_buffers = MeshBuffers::new(&device, baked_primitives);
+
+        let instance_manager = InstanceManager::new(&device, &mesh_buffers.primitives);
 
         let imgui = create_imgui_renderer(
             &device,
@@ -120,32 +127,17 @@ impl Renderer {
             g_buffer,
             common,
             size,
-            render_models,
             camera,
             depth_texture,
             shader_loader,
             instance_manager,
             imgui,
+            mesh_buffers,
 
             background_pass,
             pbr_pass,
             geometry_pass,
         })
-    }
-
-    pub fn load_models(&mut self, demo_state: &mut DemoState) -> anyhow::Result<()> {
-        for (_id, scene_model) in &mut demo_state.scene.models {
-            let render_model = RenderModel::from_model(&self.device, &scene_model.model);
-            let render_model_id = self.render_models.alloc(render_model);
-            scene_model.render_model = Some(render_model_id);
-            println!(
-                "Loaded model {} with {} primitives",
-                scene_model.name,
-                scene_model.model.primitives.len()
-            );
-        }
-
-        Ok(())
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -179,12 +171,8 @@ impl Renderer {
             GlobalUniformState::new(self.size, demo_state.start_time.elapsed().as_secs_f32()),
         );
 
-        self.instance_manager.update_from_scene(
-            &demo_state.scene,
-            &self.device,
-            &self.queue,
-            imgui_ui,
-        );
+        self.instance_manager
+            .update_from_scene(&demo_state.scene, &self.queue, imgui_ui);
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -196,6 +184,11 @@ impl Renderer {
             .create_command_encoder(&CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        let frustum = Frustum::from_view_projection(*self.camera.get_view_proj());
+        self.instance_manager
+            .cull_and_generate_commands(&self.queue, &mut encoder, &frustum);
+
         let pipeline_cache = &self.shader_loader.cache;
 
         self.background_pass.render(
@@ -206,30 +199,23 @@ impl Renderer {
             pipeline_cache,
         );
 
-        self.pbr_pass.render(
+        let indirect_buffer = self.instance_manager.draw_commands_buffer();
+
+        let unified_bind_group = self.instance_manager.bind_group();
+
+        self.pbr_pass.render_indirect(
             &PbrTextureViews {
                 color: view.clone(),
                 depth: self.depth_texture.view().clone(),
             },
             &mut encoder,
             pipeline_cache,
-            |render_pass| {
-                for batch in self.instance_manager.all_batches() {
-                    let render_model = self
-                        .render_models
-                        .get(batch.render_model_id)
-                        .expect("Render model not found");
-
-                    let bind_group = get_bind_group_for_batch(&self.instance_manager, batch);
-                    render_pass.set_bind_group(1, bind_group, &[]);
-
-                    render_batch(render_pass, render_model, batch);
-                }
-            },
+            unified_bind_group,
+            indirect_buffer,
+            &self.mesh_buffers,
         );
 
-        // Temporarily render same models in geometry pass
-        self.geometry_pass.render(
+        self.geometry_pass.render_indirect(
             &GeometryPassTextureViews {
                 color_roughness: self.g_buffer.color_roughness.view.clone(),
                 normal_metallic: self.g_buffer.normal_metallic.view.clone(),
@@ -237,19 +223,9 @@ impl Renderer {
             },
             &mut encoder,
             pipeline_cache,
-            |render_pass| {
-                for batch in self.instance_manager.all_batches() {
-                    let render_model = self
-                        .render_models
-                        .get(batch.render_model_id)
-                        .expect("Render model not found");
-
-                    let bind_group = get_bind_group_for_batch(&self.instance_manager, batch);
-                    render_pass.set_bind_group(1, bind_group, &[]);
-
-                    render_batch(render_pass, render_model, batch);
-                }
-            },
+            unified_bind_group,
+            indirect_buffer,
+            &self.mesh_buffers,
         );
 
         Ok(RenderResult {

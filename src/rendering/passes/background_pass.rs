@@ -6,11 +6,11 @@ use wgpu::{
 
 use crate::rendering::{
     render_common::RenderCommon,
-    shader_loader::{PipelineCache, PipelineCacheBuilder, PipelineId, ShaderDefinition},
+    shader_loader::{PipelineCache, PipelineCacheBuilder, RenderPipelineId, ShaderDefinition},
 };
 
 pub struct BackgroundPass {
-    pipeline_id: PipelineId,
+    pipeline_id: RenderPipelineId,
     global_uniform_bind_group: wgpu::BindGroup,
 }
 
@@ -27,7 +27,7 @@ impl BackgroundPass {
     pub fn create(
         device: &Device,
         common: Arc<RenderCommon>,
-        cache_builder: &mut PipelineCacheBuilder,
+        cache_builder: &mut PipelineCacheBuilder<wgpu::RenderPipeline>,
     ) -> anyhow::Result<BackgroundPass> {
         let global_uniform_bind_group = common.global_uniform.bind_group.clone();
 
@@ -96,7 +96,7 @@ impl BackgroundPass {
         &self,
         texture_views: &BackgroundPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache,
+        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
     ) {
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Background Pass"),

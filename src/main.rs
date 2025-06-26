@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+mod asset_pipeline;
 mod camera;
 mod demo;
 mod engine;

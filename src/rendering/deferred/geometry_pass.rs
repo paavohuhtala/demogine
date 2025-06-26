@@ -6,14 +6,15 @@ use wgpu::{
 
 use crate::rendering::{
     deferred::gbuffer::GBuffer,
+    mesh_buffers::MeshBuffers,
     render_common::RenderCommon,
     render_model::RENDER_MODEL_VBL,
-    shader_loader::{PipelineCache, PipelineCacheBuilder, PipelineId, ShaderDefinition},
+    shader_loader::{PipelineCache, PipelineCacheBuilder, RenderPipelineId, ShaderDefinition},
     texture::DepthTexture,
 };
 
 pub struct GeometryPass {
-    pipeline_id: PipelineId,
+    pipeline_id: RenderPipelineId,
     camera_bind_group: wgpu::BindGroup,
 }
 
@@ -32,7 +33,7 @@ impl GeometryPass {
     pub fn create(
         device: &wgpu::Device,
         common: std::sync::Arc<RenderCommon>,
-        cache_builder: &mut PipelineCacheBuilder,
+        cache_builder: &mut PipelineCacheBuilder<wgpu::RenderPipeline>,
     ) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -63,7 +64,7 @@ impl GeometryPass {
 
         let instance_storage_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Instance storage bind group layout"),
+                label: Some("Drawable bind group layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -148,17 +149,19 @@ impl GeometryPass {
             pipeline_id,
             camera_bind_group,
         })
-    }    pub fn render<'a, F>(
+    }
+
+    pub fn render_indirect(
         &self,
         texture_views: &GeometryPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache,
-        render_callback: F,
-    ) where
-        F: FnOnce(&mut wgpu::RenderPass) + 'a,
-    {
+        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
+        instance_bind_group: &wgpu::BindGroup,
+        indirect_buffer: &wgpu::Buffer,
+        mesh_buffers: &MeshBuffers,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("Geometry pass"),
+            label: Some("Geometry pass (Indirect)"),
             color_attachments: &[
                 Some(RenderPassColorAttachment {
                     view: &texture_views.color_roughness,
@@ -187,9 +190,16 @@ impl GeometryPass {
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
-        });        let pipeline = pipeline_cache.get(self.pipeline_id);
+        });
+
+        let pipeline = pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_callback(&mut render_pass);
+        render_pass.set_bind_group(1, instance_bind_group, &[]);
+
+        render_pass.set_vertex_buffer(0, mesh_buffers.vertices.slice(..));
+        render_pass.set_index_buffer(mesh_buffers.indices.slice(..), wgpu::IndexFormat::Uint32);
+
+        render_pass.multi_draw_indexed_indirect(indirect_buffer, 0, 32_000);
     }
 }

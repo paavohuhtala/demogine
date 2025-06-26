@@ -2,19 +2,20 @@
 // This is called "PBR pass" despite doing nothing PBR-related
 
 use wgpu::{
-    DepthBiasState, Device, MultisampleState, PipelineCompilationOptions, RenderPass,
-    RenderPassDescriptor, ShaderSource, StencilState,
+    DepthBiasState, Device, MultisampleState, PipelineCompilationOptions, RenderPassDescriptor,
+    ShaderSource, StencilState,
 };
 
 use crate::rendering::{
+    mesh_buffers::MeshBuffers,
     render_common::RenderCommon,
-    render_model::RENDER_MODEL_VBL,
-    shader_loader::{self, PipelineCache, PipelineId, ShaderDefinition},
+    render_model::{MODEL_PRIMITIVE_STATE, RENDER_MODEL_VBL},
+    shader_loader::{self, PipelineCache, RenderPipelineId, ShaderDefinition},
     texture::DepthTexture,
 };
 
 pub struct PbrPass {
-    pub pipeline_id: PipelineId,
+    pub pipeline_id: RenderPipelineId,
     camera_bind_group: wgpu::BindGroup,
 }
 
@@ -32,7 +33,7 @@ impl PbrPass {
     pub fn create(
         device: &wgpu::Device,
         common: std::sync::Arc<RenderCommon>,
-        cache_builder: &mut shader_loader::PipelineCacheBuilder,
+        cache_builder: &mut shader_loader::PipelineCacheBuilder<wgpu::RenderPipeline>,
     ) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -63,7 +64,7 @@ impl PbrPass {
 
         let instance_storage_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Instance storage bind group layout"),
+                label: Some("Drawable bind group layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -78,7 +79,7 @@ impl PbrPass {
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
+                label: Some("Default shader render pipeline layout"),
                 bind_group_layouts: &[&camera_bind_group_layout, &instance_storage_group_layout],
                 push_constant_ranges: &[],
             });
@@ -111,15 +112,7 @@ impl PbrPass {
                             })],
                             compilation_options: PipelineCompilationOptions::default(),
                         }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Cw,
-                            cull_mode: Some(wgpu::Face::Back),
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            unclipped_depth: false,
-                            conservative: false,
-                        },
+                        primitive: MODEL_PRIMITIVE_STATE,
                         depth_stencil: Some(wgpu::DepthStencilState {
                             format: DepthTexture::DEPTH_FORMAT,
                             depth_write_enabled: true,
@@ -143,17 +136,17 @@ impl PbrPass {
         })
     }
 
-    pub fn render<'a, F>(
+    pub fn render_indirect(
         &self,
         texture_views: &PbrTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache,
-        render_callback: F,
-    ) where
-        F: FnOnce(&mut RenderPass) + 'a,
-    {
+        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
+        instance_bind_group: &wgpu::BindGroup,
+        indirect_buffer: &wgpu::Buffer,
+        mesh_buffers: &MeshBuffers,
+    ) {
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("PBR Pass"),
+            label: Some("PBR Pass (Indirect)"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &texture_views.color,
                 resolve_target: None,
@@ -173,9 +166,14 @@ impl PbrPass {
             occlusion_query_set: None,
             timestamp_writes: None,
         });
+
         let pipeline = pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_callback(&mut render_pass);
+        render_pass.set_bind_group(1, instance_bind_group, &[]);
+
+        render_pass.set_vertex_buffer(0, mesh_buffers.vertices.slice(..));
+        render_pass.set_index_buffer(mesh_buffers.indices.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.multi_draw_indexed_indirect(indirect_buffer, 0, 32_000);
     }
 }

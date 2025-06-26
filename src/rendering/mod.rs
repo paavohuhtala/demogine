@@ -1,8 +1,10 @@
 pub mod common;
 pub mod deferred;
+pub mod frustum_culling;
 pub mod global_uniform;
 mod imgui_renderer;
 pub mod instancing;
+pub mod mesh_buffers;
 pub mod passes;
 pub mod render_camera;
 pub mod render_common;

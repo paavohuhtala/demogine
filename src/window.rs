@@ -11,7 +11,12 @@ use winit::{
     window::Window,
 };
 
-use crate::{demo::DemoState, engine, rendering::renderer::Renderer};
+use crate::{
+    asset_pipeline::mesh_baker::{bake_models, BakedMeshes},
+    demo::DemoState,
+    engine,
+    rendering::renderer::Renderer,
+};
 
 struct ImguiState {
     context: imgui::Context,
@@ -25,10 +30,20 @@ struct App {
     imgui: Option<ImguiState>,
     last_frame: Instant,
     frame_time_ms: f32,
+    baked_primitives: BakedMeshes,
 }
 
 impl App {
     fn from_demo_state(demo_state: DemoState) -> Self {
+        // This doesn't really belong here
+        let models = demo_state
+            .scene
+            .models
+            .iter()
+            .map(|(_, model)| &model.model)
+            .collect::<Vec<_>>();
+        let baked_primitives = bake_models(&models);
+
         Self {
             renderer: None,
             demo_state,
@@ -36,6 +51,7 @@ impl App {
             imgui: None,
             last_frame: Instant::now(),
             frame_time_ms: 0.0,
+            baked_primitives,
         }
     }
 
@@ -89,16 +105,11 @@ impl ApplicationHandler for App {
         let state = pollster::block_on(Renderer::new(
             Arc::new(window),
             &self.demo_state,
+            &self.baked_primitives,
             &mut self.imgui.as_mut().unwrap().context,
         ))
         .unwrap();
         self.renderer = Some(state);
-
-        self.renderer
-            .as_mut()
-            .unwrap()
-            .load_models(&mut self.demo_state)
-            .unwrap();
     }
 
     fn window_event(
