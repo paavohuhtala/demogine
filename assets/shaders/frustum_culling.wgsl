@@ -1,13 +1,14 @@
 
+struct Drawable {
+    model_matrix: mat4x4<f32>,
+    primitive_index: u32,
+    padding: array<u32, 3>,
+}
+
 struct AABB {
     // W coordinates are unused, but required for alignment
     min: vec4<f32>,
     max: vec4<f32>,
-}
-
-struct Cullable {
-    aabb: AABB,
-    world: mat4x4<f32>,
 }
 
 struct Frustum {
@@ -15,12 +16,31 @@ struct Frustum {
     planes: array<vec4<f32>, 6>,
 }
 
+struct PrimitiveInfo {
+    index_count: u32,
+    first_index: u32,
+    vertex_offset: u32,
+    _padding: u32,
+    aabb_min: vec4<f32>,
+    aabb_max: vec4<f32>,
+}
+
+struct DrawIndexedIndirectCommand {
+    index_count: u32,
+    instance_count: u32,
+    first_index: u32,
+    vertex_offset: u32,
+    first_instance: u32,
+}
+
 @group(0) @binding(0)
 var<uniform> frustum: Frustum;
 @group(0) @binding(1)
-var<storage, read> cullables: array<Cullable>;
+var<storage, read> primitives: array<PrimitiveInfo>;
 @group(0) @binding(2)
-var<storage, read_write> culled_indices: array<u32>;
+var<storage, read> drawables: array<Drawable>;
+@group(0) @binding(3)
+var<storage, read_write> draw_commands: array<DrawIndexedIndirectCommand>;
 
 @compute @workgroup_size(64)
 fn cull(
@@ -28,17 +48,33 @@ fn cull(
 ) {
     let index = global_id.x;
 
-    if index >= arrayLength(&cullables) {
+    if index >= arrayLength(&drawables) {
         return;
     }
 
-    let cullable = cullables[index];
+    let drawable = drawables[index];
+
+    let primitive_index = drawable.primitive_index;
+    let primitive = primitives[primitive_index];
+    let aabb = AABB(primitive.aabb_min, primitive.aabb_max);
     
-    // Transform AABB corners to world space and test against frustum
-    if is_inside_frustum_transformed(cullable.aabb, cullable.world, frustum) {
-        culled_indices[index] = 1u;
+        // Perform actual frustum culling
+    if is_inside_frustum_transformed(aabb, drawable.model_matrix, frustum) {
+        draw_commands[index] = DrawIndexedIndirectCommand(
+            primitive.index_count,
+            1,
+            primitive.first_index,
+            primitive.vertex_offset,
+            index
+        );
     } else {
-        culled_indices[index] = 0u;
+        draw_commands[index] = DrawIndexedIndirectCommand(
+            0, // index_count
+            0, // instance_count
+            0, // first_index
+            0, // vertex_offset
+            0  // first_instance
+        );
     }
 }
 
@@ -66,7 +102,7 @@ fn is_inside_frustum_transformed(aabb: AABB, transform: mat4x4<f32>, frustum: Fr
             let transformed_corner = (transform * vec4<f32>(corners[corner_idx], 1.0)).xyz;
             let distance = dot(plane.xyz, transformed_corner) + plane.w;
 
-            if distance >= 0.0 {
+            if distance <= 0.0 {
                 outside = false;
                 break;
             }

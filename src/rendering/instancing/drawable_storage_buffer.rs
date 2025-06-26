@@ -1,33 +1,25 @@
 use wgpu::{BindingType, BufferBindingType, BufferUsages, ShaderStages};
 
-use crate::rendering::instancing::instance_data::InstanceData;
+use crate::rendering::instancing::drawable::Drawable;
 
-/// Manages GPU storage buffer for instances
-pub struct InstanceStorageBuffer {
+pub struct DrawableStorageBuffer {
     buffer: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
-    capacity: u64,
 }
 
-impl InstanceStorageBuffer {
+impl DrawableStorageBuffer {
     pub fn new(device: &wgpu::Device, initial_capacity: u64) -> Self {
         let buffer = Self::create_buffer(device, initial_capacity);
         let bind_group_layout = Self::create_bind_group_layout(device);
         let bind_group = Self::create_bind_group(device, &bind_group_layout, &buffer);
 
-        Self {
-            buffer,
-            bind_group_layout,
-            bind_group,
-            capacity: initial_capacity,
-        }
+        Self { buffer, bind_group }
     }
 
     fn create_buffer(device: &wgpu::Device, capacity: u64) -> wgpu::Buffer {
         device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instance storage buffer"),
-            size: std::mem::size_of::<InstanceData>() as u64 * capacity,
+            label: Some("Drawable storage buffer"),
+            size: std::mem::size_of::<Drawable>() as u64 * capacity,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         })
@@ -35,7 +27,7 @@ impl InstanceStorageBuffer {
 
     fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Instance storage bind group layout"),
+            label: Some("Drawable storage bind group layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
@@ -55,7 +47,7 @@ impl InstanceStorageBuffer {
         buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Instance storage bind group"),
+            label: Some("Drawable storage bind group"),
             layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -64,27 +56,17 @@ impl InstanceStorageBuffer {
         })
     }
 
-    pub fn ensure_capacity(&mut self, device: &wgpu::Device, required_capacity: u64) {
-        if required_capacity > self.capacity {
-            let new_capacity = required_capacity * 2;
-            self.buffer = Self::create_buffer(device, new_capacity);
-            self.bind_group =
-                Self::create_bind_group(device, &self.bind_group_layout, &self.buffer);
-            self.capacity = new_capacity;
-        }
-    }
-
-    pub fn write_instances_at_offset(
+    pub fn write_drawables_at_offset(
         &self,
         queue: &wgpu::Queue,
-        instances: &[InstanceData],
+        instances: &[Drawable],
         start_index: u32,
     ) {
         if instances.is_empty() {
             return;
         }
 
-        let offset = (start_index as u64) * std::mem::size_of::<InstanceData>() as u64;
+        let offset = (start_index as u64) * std::mem::size_of::<Drawable>() as u64;
         queue.write_buffer(&self.buffer, offset, bytemuck::cast_slice(instances));
     }
 
@@ -92,7 +74,7 @@ impl InstanceStorageBuffer {
         &self.bind_group
     }
 
-    pub fn capacity(&self) -> u64 {
-        self.capacity
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
     }
 }

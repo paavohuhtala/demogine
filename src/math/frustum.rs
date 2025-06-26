@@ -1,8 +1,10 @@
+use bytemuck::{Pod, Zeroable};
 use glam::{vec4, Mat4, Vec3, Vec4Swizzles};
 
 use crate::math::plane::Plane;
 
-#[derive(Debug)]
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct Frustum {
     // Planes are in the order: left, right, bottom, top, near, far
     pub planes: [Plane; 6],

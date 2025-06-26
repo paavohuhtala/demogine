@@ -9,10 +9,6 @@ pub struct Plane {
 }
 
 impl Plane {
-    pub fn signed_distance_to_point(&self, point: Vec3) -> f32 {
-        self.normal.dot(point) + self.distance
-    }
-
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Plane {
         let ab = b - a;
         let ac = c - a;

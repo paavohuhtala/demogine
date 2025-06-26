@@ -3,6 +3,8 @@ use glam::{Vec2, Vec3, Vec4, Vec4Swizzles};
 use gltf::buffer;
 use itertools::izip;
 
+use crate::math::bounds::AABB;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
@@ -13,9 +15,10 @@ pub struct Vertex {
 }
 
 pub struct ModelPrimitive {
-    pub index: usize,
+    pub global_index: usize,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    pub bounding_box: AABB,
 }
 
 pub struct Model {
@@ -30,6 +33,7 @@ impl Model {
         name: impl Into<String>,
         mesh: gltf::Mesh,
         buffers: Buffers,
+        primitive_index: &mut usize,
     ) -> anyhow::Result<Model> {
         let mut model = Model {
             name: name.into(),
@@ -71,11 +75,24 @@ impl Model {
             let index_reader = reader.read_indices().expect("Failed to read indices");
             let indices = index_reader.into_u32().collect::<Vec<u32>>();
 
+            // Extract bounding box from GLTF primitive
+            let bounding_box = {
+                let bounds = primitive.bounding_box();
+                let min = Vec3::from(bounds.min);
+                let max = Vec3::from(bounds.max);
+                AABB::new(min, max)
+            };
+
+            let global_index = *primitive_index;
+
             model.primitives.push(ModelPrimitive {
-                index: primitive.index(),
                 vertices,
                 indices,
+                bounding_box,
+                global_index,
             });
+
+            *primitive_index += 1;
         }
 
         if model.primitives.is_empty() {

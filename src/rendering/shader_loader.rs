@@ -20,16 +20,19 @@ use notify_debouncer_mini::{
     new_debouncer_opt, notify::*, DebounceEventResult, DebouncedEventKind, Debouncer,
 };
 use pollster::block_on;
-use wgpu::{naga, PollType, RenderPipeline};
+use wgpu::{naga, PollType};
 
 const SHADER_FOLDER: &'static str = "assets/shaders";
 const SHADER_SHADER_MODULES_FOLDER: &'static str = "assets/shaders/shared";
 
-type PipelineFactory = Box<
-    dyn Sync
-        + Send
-        + Fn(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<wgpu::RenderPipeline>,
->;
+pub trait Pipeline {}
+
+impl Pipeline for wgpu::RenderPipeline {}
+
+impl Pipeline for wgpu::ComputePipeline {}
+
+type PipelineFactory<T> =
+    Box<dyn Sync + Send + Fn(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<T>>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ShaderDefinition {
@@ -37,14 +40,18 @@ pub(crate) struct ShaderDefinition {
     pub path: &'static str,
 }
 
-pub struct ShaderEntry {
-    pipeline_id: PipelineId,
+pub struct ShaderEntry<T: Pipeline> {
+    pipeline_id: PipelineId<T>,
     def: ShaderDefinition,
-    factory: PipelineFactory,
+    factory: PipelineFactory<T>,
 }
 
-impl ShaderEntry {
-    pub fn new(pipeline_id: PipelineId, def: ShaderDefinition, factory: PipelineFactory) -> Self {
+impl<T: Pipeline> ShaderEntry<T> {
+    pub fn new(
+        pipeline_id: PipelineId<T>,
+        def: ShaderDefinition,
+        factory: PipelineFactory<T>,
+    ) -> Self {
         Self {
             pipeline_id,
             def,
@@ -53,23 +60,30 @@ impl ShaderEntry {
     }
 }
 
-pub type PipelineId = Id<PipelineCacheEntry>;
+pub type PipelineId<T> = Id<PipelineCacheEntry<T>>;
+pub type RenderPipelineId = PipelineId<wgpu::RenderPipeline>;
+pub type ComputePipelineId = PipelineId<wgpu::ComputePipeline>;
 
-#[derive(Default)]
-pub struct PipelineCacheEntry(Option<wgpu::RenderPipeline>);
+pub struct PipelineCacheEntry<T>(Option<T>);
 
-impl PipelineCacheEntry {
-    pub fn set_pipeline(&mut self, pipeline: wgpu::RenderPipeline) {
+impl<T> Default for PipelineCacheEntry<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl<T> PipelineCacheEntry<T> {
+    pub fn set_pipeline(&mut self, pipeline: T) {
         self.0 = Some(pipeline);
     }
 }
 
-pub struct PipelineCacheBuilder {
-    shaders: Arena<ShaderEntry>,
-    pipelines: Arena<PipelineCacheEntry>,
+pub struct PipelineCacheBuilder<T: Pipeline> {
+    shaders: Arena<ShaderEntry<T>>,
+    pipelines: Arena<PipelineCacheEntry<T>>,
 }
 
-impl PipelineCacheBuilder {
+impl<T: Pipeline> PipelineCacheBuilder<T> {
     pub fn new() -> Self {
         Self {
             shaders: Arena::new(),
@@ -79,15 +93,15 @@ impl PipelineCacheBuilder {
     pub fn add_shader(
         &mut self,
         shader_def: ShaderDefinition,
-        factory: PipelineFactory,
-    ) -> PipelineId {
+        factory: PipelineFactory<T>,
+    ) -> PipelineId<T> {
         let pipeline_id = self.pipelines.alloc(PipelineCacheEntry::default());
         let shader_entry = ShaderEntry::new(pipeline_id, shader_def, factory);
         self.shaders.alloc(shader_entry);
         pipeline_id
     }
 
-    pub fn build(self) -> PipelineCache {
+    pub fn build(self) -> PipelineCache<T> {
         PipelineCache {
             shaders: Arc::new(self.shaders),
             pipelines: self.pipelines,
@@ -95,23 +109,23 @@ impl PipelineCacheBuilder {
     }
 }
 
-pub struct PipelineCache {
-    shaders: Arc<Arena<ShaderEntry>>,
-    pipelines: Arena<PipelineCacheEntry>,
+pub struct PipelineCache<T: Pipeline> {
+    shaders: Arc<Arena<ShaderEntry<T>>>,
+    pipelines: Arena<PipelineCacheEntry<T>>,
 }
 
-impl PipelineCache {
-    pub fn get(&self, id: PipelineId) -> &RenderPipeline {
+impl<T: Pipeline> PipelineCache<T> {
+    pub fn get(&self, id: PipelineId<T>) -> &T {
         self.pipelines.get(id).unwrap().0.as_ref().unwrap()
     }
 
-    pub fn get_entry_mut(&mut self, id: PipelineId) -> &mut PipelineCacheEntry {
+    pub fn get_entry_mut(&mut self, id: PipelineId<T>) -> &mut PipelineCacheEntry<T> {
         self.pipelines.get_mut(id).unwrap()
     }
 
     pub fn iter_shaders_and_pipelines_mut(
         &mut self,
-    ) -> impl Iterator<Item = (&ShaderEntry, &mut PipelineCacheEntry)> {
+    ) -> impl Iterator<Item = (&ShaderEntry<T>, &mut PipelineCacheEntry<T>)> {
         // This assumes that the shaders and pipelines are in sync, which should be the case
         // because the same method inserts to both arenas.
         self.shaders
@@ -126,16 +140,16 @@ impl PipelineCache {
 }
 
 // Loads and compiles shaders to pipelines in a worker thread.
-pub(crate) struct ShaderLoader {
-    pub cache: PipelineCache,
+pub(crate) struct ShaderLoader<T: Pipeline = wgpu::RenderPipeline> {
+    pub cache: PipelineCache<T>,
     device: wgpu::Device,
-    receiver: mpsc::Receiver<(&'static str, PipelineId, wgpu::RenderPipeline)>,
+    receiver: mpsc::Receiver<(&'static str, PipelineId<T>, T)>,
     composer: Arc<RwLock<Composer>>,
     _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
 
-impl ShaderLoader {
-    pub fn new(device: wgpu::Device, cache_builder: PipelineCacheBuilder) -> Self {
+impl<T: 'static + Pipeline + Send> ShaderLoader<T> {
+    pub fn new(device: wgpu::Device, cache_builder: PipelineCacheBuilder<T>) -> Self {
         let cache = cache_builder.build();
 
         let (send_new_pipelines, recv_new_pipelines) = channel();
@@ -234,12 +248,12 @@ impl ShaderLoader {
     }
 }
 
-fn compile_file(
+fn compile_file<T: Pipeline>(
     device: &wgpu::Device,
     shader_def: &ShaderDefinition,
-    factory: &PipelineFactory,
+    factory: &PipelineFactory<T>,
     composer: Arc<RwLock<Composer>>,
-) -> anyhow::Result<wgpu::RenderPipeline> {
+) -> anyhow::Result<T> {
     let path = Path::new(SHADER_FOLDER).join(shader_def.path);
     let shader_code = std::fs::read_to_string(&path)
         .map_err(|e| anyhow::anyhow!("Failed to read shader file {}: {}", path.display(), e))?;

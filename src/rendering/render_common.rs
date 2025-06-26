@@ -1,6 +1,6 @@
 use std::sync::RwLock;
 
-use wgpu::SurfaceConfiguration;
+use wgpu::{PresentMode, SurfaceConfiguration};
 use winit::dpi::PhysicalSize;
 
 use crate::rendering::global_uniform::{GlobalUniform, GlobalUniformState};
@@ -27,12 +27,25 @@ impl RenderCommon {
             .copied()
             .unwrap_or(surface_caps.formats[0]);
 
+        let present_mode_preference = [
+            PresentMode::Mailbox,
+            PresentMode::Fifo,
+            PresentMode::Immediate,
+        ];
+
+        let present_mode = surface_caps
+            .present_modes
+            .iter()
+            .find(|&&mode| present_mode_preference.contains(&mode))
+            .copied()
+            .unwrap_or(surface_caps.present_modes[0]);
+
         let output_surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
-            present_mode: surface_caps.present_modes[0],
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,

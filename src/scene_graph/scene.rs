@@ -11,6 +11,7 @@ use crate::scene_graph::transform::Transform;
 pub struct Scene {
     pub objects: Arena<Object3D>,
     pub models: Arena<SceneModel>,
+    next_primitive_index: usize,
     gltf_mesh_to_model: HashMap<usize, SceneModelId>,
 }
 
@@ -19,6 +20,7 @@ impl Scene {
         Self {
             objects: Arena::new(),
             models: Arena::new(),
+            next_primitive_index: 0,
             gltf_mesh_to_model: HashMap::new(),
         }
     }
@@ -95,9 +97,14 @@ impl Scene {
                         .map(String::from)
                         .unwrap_or_else(|| format!("{} (Mesh)", node_name));
 
-                    let model = Model::from_gltf(mesh_name.clone(), mesh, buffers)
-                        .expect("Failed to create model from glTF mesh");
-                    let scene_model = SceneModel::new(mesh_name, model);
+                    let model = Model::from_gltf(
+                        mesh_name.clone(),
+                        mesh,
+                        buffers,
+                        &mut self.next_primitive_index,
+                    )
+                    .expect("Failed to create model from glTF mesh");
+                    let scene_model = SceneModel::new(model);
                     let mesh_id = self.add_model(scene_model);
                     self.gltf_mesh_to_model.insert(mesh_index, mesh_id);
 

@@ -1,64 +1,6 @@
 use std::mem::offset_of;
 
-use id_arena::Id;
-use wgpu::util::DeviceExt;
-
-use crate::model::{Model, ModelPrimitive, Vertex};
-
-pub type RenderModelId = Id<RenderModel>;
-
-pub struct RenderPrimitive {
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32,
-}
-
-impl RenderPrimitive {
-    fn from_primitive(device: &wgpu::Device, model: &Model, primitive: &ModelPrimitive) -> Self {
-        let vertex_buffer_name = format!(
-            "Vertex buffer ({}, primitive {})",
-            model.name, primitive.index
-        );
-        let index_buffer_name = format!(
-            "Index buffer ({}, primitive {})",
-            model.name, primitive.index
-        );
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&vertex_buffer_name),
-            contents: bytemuck::cast_slice(&primitive.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&index_buffer_name),
-            contents: bytemuck::cast_slice(&primitive.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        Self {
-            vertex_buffer,
-            index_buffer,
-            num_indices: primitive.indices.len() as u32,
-        }
-    }
-}
-
-pub struct RenderModel {
-    pub primitives: Vec<RenderPrimitive>,
-}
-
-impl RenderModel {
-    pub fn from_model(device: &wgpu::Device, model: &Model) -> Self {
-        let primitives = model
-            .primitives
-            .iter()
-            .map(|primitive| RenderPrimitive::from_primitive(device, model, primitive))
-            .collect();
-
-        RenderModel { primitives }
-    }
-}
+use crate::model::Vertex;
 
 pub const RENDER_MODEL_VBL: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -85,4 +27,14 @@ pub const RENDER_MODEL_VBL: wgpu::VertexBufferLayout<'static> = wgpu::VertexBuff
             format: wgpu::VertexFormat::Float32x3,
         },
     ],
+};
+
+pub const MODEL_PRIMITIVE_STATE: wgpu::PrimitiveState = wgpu::PrimitiveState {
+    topology: wgpu::PrimitiveTopology::TriangleList,
+    strip_index_format: None,
+    front_face: wgpu::FrontFace::Cw,
+    cull_mode: Some(wgpu::Face::Back),
+    polygon_mode: wgpu::PolygonMode::Fill,
+    unclipped_depth: false,
+    conservative: false,
 };
