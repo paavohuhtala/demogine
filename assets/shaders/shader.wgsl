@@ -1,5 +1,5 @@
 #import shared::camera::CameraUniform
-#import shared::instancing::Drawable
+#import shared::drawable::Drawable
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
@@ -42,7 +42,7 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     const ambient_light = vec3<f32>(0.1, 0.1, 0.1);
 
-    let light_direction = normalize(vec3(0.4, 1.0, 0.8));
+    let light_direction = normalize(vec3(0.4, 1.0, 0.1));
     let normal = normalize(in.normal);
     let intensity = dot(normal, light_direction);
     return vec4<f32>(vec3(intensity), 1.0);

@@ -23,7 +23,9 @@ use crate::{
         },
         render_camera::RenderCamera,
         render_common::RenderCommon,
-        shader_loader::{PipelineCacheBuilder, ShaderLoader},
+        shader_loader::{
+            ComputeShaderLoader, PipelineCacheBuilder, RenderShaderLoader, ShaderLoader,
+        },
         texture::DepthTexture,
     },
 };
@@ -39,14 +41,16 @@ pub struct Renderer {
     pub common: Arc<RenderCommon>,
     depth_texture: DepthTexture,
     camera: RenderCamera,
-    shader_loader: ShaderLoader,
-    instance_manager: InstanceManager,
     imgui: ImguiRendererState,
     mesh_buffers: MeshBuffers,
 
+    render_shader_loader: RenderShaderLoader,
     background_pass: BackgroundPass,
     pbr_pass: PbrPass,
     geometry_pass: GeometryPass,
+
+    compute_shader_loader: ComputeShaderLoader,
+    instance_manager: InstanceManager,
 }
 
 impl Renderer {
@@ -96,21 +100,26 @@ impl Renderer {
         let depth_texture = DepthTexture::new(&device, size, "Depth Texture");
 
         let mut render_pipeline_cache_builder = PipelineCacheBuilder::new();
-
         let background_pass =
             BackgroundPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
         let pbr_pass =
             PbrPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
         let geometry_pass =
             GeometryPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
-
-        let shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
+        let render_shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
 
         let g_buffer = GBuffer::new(&device, size);
 
         let mesh_buffers = MeshBuffers::new(&device, baked_primitives);
 
-        let instance_manager = InstanceManager::new(&device, &mesh_buffers.primitives);
+        let mut compute_pipeline_cache_builder = PipelineCacheBuilder::new();
+        let instance_manager = InstanceManager::new(
+            &device,
+            &mesh_buffers.meshes,
+            &mut compute_pipeline_cache_builder,
+        );
+        let compute_shader_loader =
+            ShaderLoader::new(device.clone(), compute_pipeline_cache_builder);
 
         let imgui = create_imgui_renderer(
             &device,
@@ -129,14 +138,16 @@ impl Renderer {
             size,
             camera,
             depth_texture,
-            shader_loader,
-            instance_manager,
             imgui,
             mesh_buffers,
 
+            render_shader_loader,
             background_pass,
             pbr_pass,
             geometry_pass,
+
+            compute_shader_loader,
+            instance_manager,
         })
     }
 
@@ -160,9 +171,12 @@ impl Renderer {
         demo_state: &mut DemoState,
         imgui_ui: &mut imgui::Ui,
     ) -> Result<RenderResult, wgpu::SurfaceError> {
-        self.shader_loader
+        self.render_shader_loader
             .load_pending_shaders()
             .expect("Failed to load pending shaders");
+        self.compute_shader_loader
+            .load_pending_shaders()
+            .expect("Failed to load pending compute shaders");
 
         self.camera.update_camera(&demo_state.camera);
         self.camera.update_uniform_buffer(&self.queue);
@@ -186,10 +200,14 @@ impl Renderer {
             });
 
         let frustum = Frustum::from_view_projection(*self.camera.get_view_proj());
-        self.instance_manager
-            .cull_and_generate_commands(&self.queue, &mut encoder, &frustum);
+        self.instance_manager.cull_and_generate_commands(
+            &self.queue,
+            &mut encoder,
+            &self.compute_shader_loader.cache,
+            &frustum,
+        );
 
-        let pipeline_cache = &self.shader_loader.cache;
+        let pipeline_cache = &self.render_shader_loader.cache;
 
         self.background_pass.render(
             &BackgroundPassTextureViews {

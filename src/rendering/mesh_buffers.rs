@@ -5,7 +5,7 @@ use crate::asset_pipeline::mesh_baker::BakedMeshes;
 pub struct MeshBuffers {
     pub vertices: wgpu::Buffer,
     pub indices: wgpu::Buffer,
-    pub primitives: wgpu::Buffer,
+    pub meshes: wgpu::Buffer,
 }
 
 impl MeshBuffers {
@@ -22,8 +22,8 @@ impl MeshBuffers {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let primitive_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Primitive megabuffer"),
+        let mesh_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh megabuffer"),
             contents: bytemuck::cast_slice(&baked_primitives.meshes),
             usage: wgpu::BufferUsages::STORAGE,
         });
@@ -31,7 +31,7 @@ impl MeshBuffers {
         Self {
             vertices: vertex_buffer,
             indices: index_buffer,
-            primitives: primitive_buffer,
+            meshes: mesh_buffer,
         }
     }
 }

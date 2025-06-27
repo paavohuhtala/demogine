@@ -114,6 +114,9 @@ pub struct PipelineCache<T: Pipeline> {
     pipelines: Arena<PipelineCacheEntry<T>>,
 }
 
+pub type RenderPipelineCache = PipelineCache<wgpu::RenderPipeline>;
+pub type ComputePipelineCache = PipelineCache<wgpu::ComputePipeline>;
+
 impl<T: Pipeline> PipelineCache<T> {
     pub fn get(&self, id: PipelineId<T>) -> &T {
         self.pipelines.get(id).unwrap().0.as_ref().unwrap()
@@ -140,13 +143,16 @@ impl<T: Pipeline> PipelineCache<T> {
 }
 
 // Loads and compiles shaders to pipelines in a worker thread.
-pub(crate) struct ShaderLoader<T: Pipeline = wgpu::RenderPipeline> {
+pub(crate) struct ShaderLoader<T: Pipeline> {
     pub cache: PipelineCache<T>,
     device: wgpu::Device,
     receiver: mpsc::Receiver<(&'static str, PipelineId<T>, T)>,
     composer: Arc<RwLock<Composer>>,
     _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
 }
+
+pub type RenderShaderLoader = ShaderLoader<wgpu::RenderPipeline>;
+pub type ComputeShaderLoader = ShaderLoader<wgpu::ComputePipeline>;
 
 impl<T: 'static + Pipeline + Send> ShaderLoader<T> {
     pub fn new(device: wgpu::Device, cache_builder: PipelineCacheBuilder<T>) -> Self {

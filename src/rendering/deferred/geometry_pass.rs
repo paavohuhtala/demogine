@@ -9,7 +9,9 @@ use crate::rendering::{
     mesh_buffers::MeshBuffers,
     render_common::RenderCommon,
     render_model::RENDER_MODEL_VBL,
-    shader_loader::{PipelineCache, PipelineCacheBuilder, RenderPipelineId, ShaderDefinition},
+    shader_loader::{
+        PipelineCacheBuilder, RenderPipelineCache, RenderPipelineId, ShaderDefinition,
+    },
     texture::DepthTexture,
 };
 
@@ -155,7 +157,7 @@ impl GeometryPass {
         &self,
         texture_views: &GeometryPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
+        pipeline_cache: &RenderPipelineCache,
         instance_bind_group: &wgpu::BindGroup,
         indirect_buffer: &wgpu::Buffer,
         mesh_buffers: &MeshBuffers,

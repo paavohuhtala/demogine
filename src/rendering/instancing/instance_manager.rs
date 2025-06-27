@@ -3,6 +3,7 @@ use crate::{
     rendering::{
         frustum_culling::FrustumCullingResources,
         instancing::{drawable::Drawable, drawable_storage_buffer::DrawableStorageBuffer},
+        shader_loader::{ComputePipelineCache, PipelineCacheBuilder},
     },
     scene_graph::scene::Scene,
 };
@@ -14,11 +15,19 @@ pub struct InstanceManager {
 }
 
 impl InstanceManager {
-    pub fn new(device: &wgpu::Device, primitive_buffer: &wgpu::Buffer) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        mesh_info_buffer: &wgpu::Buffer,
+        pipeline_builder: &mut PipelineCacheBuilder<wgpu::ComputePipeline>,
+    ) -> Self {
         let drawable_buffer = DrawableStorageBuffer::new(device, 64_000);
 
-        let frustum_culling =
-            FrustumCullingResources::new(device, drawable_buffer.buffer(), primitive_buffer);
+        let frustum_culling = FrustumCullingResources::new(
+            device,
+            drawable_buffer.buffer(),
+            mesh_info_buffer,
+            pipeline_builder,
+        );
 
         Self {
             drawable_buffer,
@@ -77,11 +86,15 @@ impl InstanceManager {
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
+        pipeline_cache: &ComputePipelineCache,
         frustum: &Frustum,
     ) {
         self.frustum_culling.update_frustum(queue, frustum);
-        self.frustum_culling
-            .dispatch_culling_for_buffer(encoder, self.drawables.len() as u32);
+        self.frustum_culling.dispatch_culling_for_buffer(
+            encoder,
+            pipeline_cache,
+            self.drawables.len() as u32,
+        );
     }
 
     pub fn draw_commands_buffer(&self) -> &wgpu::Buffer {

@@ -2,41 +2,31 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec4;
 use wgpu::wgt::DrawIndexedIndirectArgs;
 
-use crate::math::frustum::Frustum;
+use crate::{
+    math::frustum::Frustum,
+    rendering::shader_loader::{
+        ComputePipelineCache, ComputePipelineId, PipelineCacheBuilder, ShaderDefinition,
+    },
+};
 
-/// GPU representation of frustum planes (must match WGSL struct)
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Pod, Zeroable)]
-pub struct GpuFrustum {
-    pub planes: [Vec4; 6],
-}
-
-impl From<&Frustum> for GpuFrustum {
-    fn from(frustum: &Frustum) -> Self {
-        let planes = frustum.planes.map(|plane| {
-            Vec4::new(
-                plane.normal.x,
-                plane.normal.y,
-                plane.normal.z,
-                plane.distance,
-            )
-        });
-        Self { planes }
-    }
-}
+const SHADER_DEF: ShaderDefinition = ShaderDefinition {
+    name: "Frustum culling compute shader",
+    path: "frustum_culling.wgsl",
+};
 
 pub struct FrustumCullingResources {
     pub draw_commands_buffer: wgpu::Buffer,
     pub frustum_buffer: wgpu::Buffer,
     pub culling_bind_group: wgpu::BindGroup,
-    pub compute_pipeline: wgpu::ComputePipeline,
+    pipeline_id: ComputePipelineId,
 }
 
 impl FrustumCullingResources {
     pub fn new(
         device: &wgpu::Device,
         instance_buffer: &wgpu::Buffer,
-        primitive_buffer: &wgpu::Buffer,
+        mesh_info_buffer: &wgpu::Buffer,
+        pipeline_builder: &mut PipelineCacheBuilder<wgpu::ComputePipeline>,
     ) -> Self {
         let frustum_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Frustum buffer"),
@@ -69,7 +59,7 @@ impl FrustumCullingResources {
                     },
                     count: None,
                 },
-                // Primitive buffer
+                // Mesh info buffer
                 {
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
@@ -117,7 +107,7 @@ impl FrustumCullingResources {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: primitive_buffer.as_entire_binding(),
+                    resource: mesh_info_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -130,34 +120,41 @@ impl FrustumCullingResources {
             ],
         });
 
-        let shader_source = std::fs::read_to_string("assets/shaders/frustum_culling.wgsl")
-            .expect("Failed to read frustum culling shader");
+        let pipeline_id = pipeline_builder.add_shader(
+            SHADER_DEF,
+            Box::new(
+                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
+                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                        label: Some(shader_def.name),
+                        source: wgpu::ShaderSource::Wgsl(source.into()),
+                    });
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Frustum culling compute shader"),
-            source: wgpu::ShaderSource::Wgsl(shader_source.into()),
-        });
+                    let compute_pipeline =
+                        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                            label: Some("Frustum culling compute pipeline"),
+                            layout: Some(&device.create_pipeline_layout(
+                                &wgpu::PipelineLayoutDescriptor {
+                                    label: Some("Frustum culling pipeline layout"),
+                                    bind_group_layouts: &[&bind_group_layout],
+                                    push_constant_ranges: &[],
+                                },
+                            )),
+                            module: &shader,
+                            entry_point: Some("cull"),
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                            cache: None,
+                        });
 
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Frustum culling compute pipeline"),
-            layout: Some(
-                &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("Frustum culling pipeline layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                }),
+                    Ok(compute_pipeline)
+                },
             ),
-            module: &shader,
-            entry_point: Some("cull"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        );
 
         Self {
             draw_commands_buffer,
             frustum_buffer,
             culling_bind_group,
-            compute_pipeline,
+            pipeline_id,
         }
     }
 
@@ -173,18 +170,42 @@ impl FrustumCullingResources {
     pub fn dispatch_culling_for_buffer(
         &self,
         encoder: &mut wgpu::CommandEncoder,
+        pipeline_cache: &ComputePipelineCache,
         instance_count: u32,
     ) {
+        let pipeline = pipeline_cache.get(self.pipeline_id);
+
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("Frustum culling compute pass"),
             timestamp_writes: None,
         });
 
-        compute_pass.set_pipeline(&self.compute_pipeline);
+        compute_pass.set_pipeline(pipeline);
         compute_pass.set_bind_group(0, &self.culling_bind_group, &[]);
 
         const WORKGROUP_SIZE: u32 = 64;
         let workgroup_count = instance_count.div_ceil(WORKGROUP_SIZE);
         compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
+    }
+}
+
+/// GPU representation of frustum planes (must match WGSL struct)
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
+pub struct GpuFrustum {
+    pub planes: [Vec4; 6],
+}
+
+impl From<&Frustum> for GpuFrustum {
+    fn from(frustum: &Frustum) -> Self {
+        let planes = frustum.planes.map(|plane| {
+            Vec4::new(
+                plane.normal.x,
+                plane.normal.y,
+                plane.normal.z,
+                plane.distance,
+            )
+        });
+        Self { planes }
     }
 }

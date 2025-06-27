@@ -1,9 +1,7 @@
-
-struct Drawable {
-    model_matrix: mat4x4<f32>,
-    primitive_index: u32,
-    padding: array<u32, 3>,
-}
+#import shared::drawable::Drawable
+#import shared::mesh_info::MeshInfo
+#import shared::frustum::Frustum
+#import shared::commands::DrawIndexedIndirectCommand
 
 struct AABB {
     // W coordinates are unused, but required for alignment
@@ -11,32 +9,10 @@ struct AABB {
     max: vec4<f32>,
 }
 
-struct Frustum {
-    // Same order as in Rust version of the struct
-    planes: array<vec4<f32>, 6>,
-}
-
-struct PrimitiveInfo {
-    index_count: u32,
-    first_index: u32,
-    vertex_offset: u32,
-    _padding: u32,
-    aabb_min: vec4<f32>,
-    aabb_max: vec4<f32>,
-}
-
-struct DrawIndexedIndirectCommand {
-    index_count: u32,
-    instance_count: u32,
-    first_index: u32,
-    vertex_offset: u32,
-    first_instance: u32,
-}
-
 @group(0) @binding(0)
 var<uniform> frustum: Frustum;
 @group(0) @binding(1)
-var<storage, read> primitives: array<PrimitiveInfo>;
+var<storage, read> primitives: array<MeshInfo>;
 @group(0) @binding(2)
 var<storage, read> drawables: array<Drawable>;
 @group(0) @binding(3)

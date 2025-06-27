@@ -6,7 +6,9 @@ use wgpu::{
 
 use crate::rendering::{
     render_common::RenderCommon,
-    shader_loader::{PipelineCache, PipelineCacheBuilder, RenderPipelineId, ShaderDefinition},
+    shader_loader::{
+        PipelineCacheBuilder, RenderPipelineCache, RenderPipelineId, ShaderDefinition,
+    },
 };
 
 pub struct BackgroundPass {
@@ -96,7 +98,7 @@ impl BackgroundPass {
         &self,
         texture_views: &BackgroundPassTextureViews,
         encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
+        pipeline_cache: &RenderPipelineCache,
     ) {
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("Background Pass"),
