@@ -15,11 +15,14 @@ var<uniform> frustum: Frustum;
 var<storage, read> primitives: array<MeshInfo>;
 @group(0) @binding(2)
 var<storage, read> drawables: array<Drawable>;
+
 @group(0) @binding(3)
-var<storage, read_write> draw_commands: array<DrawIndexedIndirectCommand>;
+var<storage, read_write> drawable_visibility: array<u32>;
+@group(0) @binding(4)
+var<storage, read_write> visible_drawables_by_mesh: array<atomic<u32>>;
 
 @compute @workgroup_size(64)
-fn cull(
+fn main(
     @builtin(global_invocation_id) global_id: vec3<u32>
 ) {
     let index = global_id.x;
@@ -33,24 +36,12 @@ fn cull(
     let primitive_index = drawable.primitive_index;
     let primitive = primitives[primitive_index];
     let aabb = AABB(primitive.aabb_min, primitive.aabb_max);
-    
-        // Perform actual frustum culling
+
     if is_inside_frustum_transformed(aabb, drawable.model_matrix, frustum) {
-        draw_commands[index] = DrawIndexedIndirectCommand(
-            primitive.index_count,
-            1,
-            primitive.first_index,
-            primitive.vertex_offset,
-            index
-        );
+        drawable_visibility[index] = 1;
+        atomicAdd(&visible_drawables_by_mesh[primitive_index], 1u);
     } else {
-        draw_commands[index] = DrawIndexedIndirectCommand(
-            0, // index_count
-            0, // instance_count
-            0, // first_index
-            0, // vertex_offset
-            0  // first_instance
-        );
+        drawable_visibility[index] = 0;
     }
 }
 

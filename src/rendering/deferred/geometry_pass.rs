@@ -5,7 +5,9 @@ use wgpu::{
 };
 
 use crate::rendering::{
+    config::RenderConfig,
     deferred::gbuffer::GBuffer,
+    instancing,
     passes::render_pass_context::RenderPassContext,
     render_common::RenderCommon,
     render_model::RENDER_MODEL_VBL,
@@ -14,6 +16,7 @@ use crate::rendering::{
 };
 
 pub struct GeometryPass {
+    config: &'static RenderConfig,
     pipeline_id: RenderPipelineId,
     camera_bind_group: wgpu::BindGroup,
 }
@@ -32,6 +35,7 @@ const SHADER_DEF: ShaderDefinition = ShaderDefinition {
 impl GeometryPass {
     pub fn create(
         device: &wgpu::Device,
+        config: &'static RenderConfig,
         common: std::sync::Arc<RenderCommon>,
         cache_builder: &mut PipelineCacheBuilder<wgpu::RenderPipeline>,
     ) -> anyhow::Result<Self>
@@ -146,6 +150,7 @@ impl GeometryPass {
         );
 
         Ok(GeometryPass {
+            config,
             pipeline_id,
             camera_bind_group,
         })
@@ -191,7 +196,7 @@ impl GeometryPass {
         let pipeline = context.pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, context.instance_bind_group, &[]);
+        render_pass.set_bind_group(1, context.drawable_bind_group, &[]);
 
         render_pass.set_vertex_buffer(0, context.mesh_buffers.vertices.slice(..));
         render_pass.set_index_buffer(
@@ -199,6 +204,20 @@ impl GeometryPass {
             wgpu::IndexFormat::Uint32,
         );
 
-        render_pass.multi_draw_indexed_indirect(context.indirect_buffer, 0, 32_000);
+        if self.config.use_multi_draw_indirect_count {
+            render_pass.multi_draw_indexed_indirect_count(
+                context.draw_commands_buffer,
+                0,
+                context.draw_commands_count_buffer,
+                0,
+                instancing::MAX_MESHES as u32,
+            );
+        } else {
+            render_pass.multi_draw_indexed_indirect(
+                context.draw_commands_buffer,
+                0,
+                instancing::MAX_MESHES as u32,
+            );
+        }
     }
 }

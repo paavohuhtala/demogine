@@ -1,6 +1,6 @@
 pub mod common;
+pub mod config;
 pub mod deferred;
-pub mod frustum_culling;
 pub mod global_uniform;
 mod imgui_renderer;
 pub mod instancing;

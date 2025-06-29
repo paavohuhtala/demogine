@@ -9,6 +9,7 @@ use crate::{
     math::frustum::Frustum,
     rendering::{
         common::Resolution,
+        config::RenderConfig,
         deferred::{
             gbuffer::GBuffer,
             geometry_pass::{GeometryPass, GeometryPassTextureViews},
@@ -39,6 +40,9 @@ pub struct Renderer {
     surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    #[allow(dead_code)]
+    pub config: &'static RenderConfig,
+
     g_buffer: GBuffer,
     pub common: Arc<RenderCommon>,
     depth_texture: DepthTexture,
@@ -77,12 +81,23 @@ impl Renderer {
             .await
             .unwrap();
 
+        let mut config = RenderConfig::default();
+        let indirect_draw_count_feature = wgpu::Features::MULTI_DRAW_INDIRECT_COUNT;
+        let mut required_features = wgpu::Features::MULTI_DRAW_INDIRECT
+            | wgpu::Features::INDIRECT_FIRST_INSTANCE
+            | wgpu::Features::TEXTURE_BINDING_ARRAY
+            | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING;
+
+        if adapter.features().contains(indirect_draw_count_feature) {
+            config.use_multi_draw_indirect_count = true;
+            required_features |= indirect_draw_count_feature;
+        }
+
+        let config = Box::leak(Box::new(config));
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::MULTI_DRAW_INDIRECT
-                    | wgpu::Features::INDIRECT_FIRST_INSTANCE
-                    | wgpu::Features::TEXTURE_BINDING_ARRAY
-                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                required_features,
                 required_limits: wgpu::Limits {
                     max_binding_array_elements_per_shader_stage: 128,
                     ..Default::default()
@@ -114,12 +129,17 @@ impl Renderer {
             BackgroundPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
         let pbr_pass = PbrPass::create(
             &device,
+            config,
             common.clone(),
             &mut render_pipeline_cache_builder,
             &material_manager,
         )?;
-        let geometry_pass =
-            GeometryPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
+        let geometry_pass = GeometryPass::create(
+            &device,
+            config,
+            common.clone(),
+            &mut render_pipeline_cache_builder,
+        )?;
         let render_shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
 
         let g_buffer = GBuffer::new(&device, size);
@@ -129,6 +149,7 @@ impl Renderer {
         let mut compute_pipeline_cache_builder = PipelineCacheBuilder::new();
         let instance_manager = InstanceManager::new(
             &device,
+            config,
             &mesh_buffers.meshes,
             &mut compute_pipeline_cache_builder,
         );
@@ -147,6 +168,8 @@ impl Renderer {
             surface,
             device,
             queue,
+            config,
+
             g_buffer,
             common,
             size,
@@ -232,15 +255,12 @@ impl Renderer {
             pipeline_cache,
         );
 
-        let indirect_buffer = self.instance_manager.draw_commands_buffer();
-
-        let unified_bind_group = self.instance_manager.bind_group();
-
         let mut pass_context = RenderPassContext {
             encoder: &mut encoder,
             pipeline_cache,
-            instance_bind_group: &unified_bind_group,
-            indirect_buffer,
+            drawable_bind_group: self.instance_manager.visible_drawable_bind_group(),
+            draw_commands_buffer: self.instance_manager.draw_commands_buffer(),
+            draw_commands_count_buffer: self.instance_manager.draw_commands_count_buffer(),
             mesh_buffers: &self.mesh_buffers,
             material_manager: &mut self.material_manager,
         };

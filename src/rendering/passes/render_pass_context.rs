@@ -6,8 +6,9 @@ use crate::rendering::{
 pub struct RenderPassContext<'a> {
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub pipeline_cache: &'a RenderPipelineCache,
-    pub instance_bind_group: &'a wgpu::BindGroup,
-    pub indirect_buffer: &'a wgpu::Buffer,
+    pub drawable_bind_group: &'a wgpu::BindGroup,
+    pub draw_commands_buffer: &'a wgpu::Buffer,
+    pub draw_commands_count_buffer: &'a wgpu::Buffer,
     pub mesh_buffers: &'a MeshBuffers,
     pub material_manager: &'a mut RenderMaterialManager,
 }

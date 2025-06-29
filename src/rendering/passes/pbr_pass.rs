@@ -7,6 +7,8 @@ use wgpu::{
 };
 
 use crate::rendering::{
+    config::RenderConfig,
+    instancing,
     passes::render_pass_context::RenderPassContext,
     render_common::RenderCommon,
     render_material_manager::RenderMaterialManager,
@@ -16,6 +18,7 @@ use crate::rendering::{
 };
 
 pub struct PbrPass {
+    config: &'static RenderConfig,
     pub pipeline_id: RenderPipelineId,
     camera_bind_group: wgpu::BindGroup,
 }
@@ -33,6 +36,7 @@ const DEFAULT_SHADER: ShaderDefinition = ShaderDefinition {
 impl PbrPass {
     pub fn create(
         device: &wgpu::Device,
+        config: &'static RenderConfig,
         common: std::sync::Arc<RenderCommon>,
         cache_builder: &mut shader_loader::PipelineCacheBuilder<wgpu::RenderPipeline>,
         material_manager: &RenderMaterialManager,
@@ -137,6 +141,7 @@ impl PbrPass {
         );
 
         Ok(PbrPass {
+            config,
             pipeline_id,
             camera_bind_group,
         })
@@ -172,7 +177,7 @@ impl PbrPass {
         let pipeline = context.pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, context.instance_bind_group, &[]);
+        render_pass.set_bind_group(1, context.drawable_bind_group, &[]);
         render_pass.set_bind_group(2, context.material_manager.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, context.mesh_buffers.vertices.slice(..));
@@ -180,6 +185,21 @@ impl PbrPass {
             context.mesh_buffers.indices.slice(..),
             wgpu::IndexFormat::Uint32,
         );
-        render_pass.multi_draw_indexed_indirect(context.indirect_buffer, 0, 32_000);
+
+        if self.config.use_multi_draw_indirect_count {
+            render_pass.multi_draw_indexed_indirect_count(
+                context.draw_commands_buffer,
+                0,
+                context.draw_commands_count_buffer,
+                0,
+                instancing::MAX_MESHES as u32,
+            );
+        } else {
+            render_pass.multi_draw_indexed_indirect(
+                context.draw_commands_buffer,
+                0,
+                instancing::MAX_MESHES as u32,
+            );
+        }
     }
 }
