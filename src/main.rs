@@ -4,6 +4,7 @@ mod asset_pipeline;
 mod camera;
 mod demo;
 mod engine;
+mod material_manager;
 mod math;
 mod model;
 mod rendering;

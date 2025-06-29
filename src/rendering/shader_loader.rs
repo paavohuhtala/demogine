@@ -323,7 +323,9 @@ fn compile_file<T: Pipeline>(
 fn create_composer() -> anyhow::Result<Composer> {
     let shared_files = std::fs::read_dir(SHADER_SHADER_MODULES_FOLDER)
         .expect("Failed to read shared shader modules directory");
-    let mut composer = Composer::default();
+    let mut composer = Composer::default().with_capabilities(
+        Capabilities::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+    );
 
     for entry in shared_files {
         let entry = entry.expect("Failed to read entry in shared shader modules directory");

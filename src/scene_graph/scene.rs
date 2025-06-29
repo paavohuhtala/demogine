@@ -2,6 +2,7 @@ use glam::{Mat4, Quat, Vec3};
 use id_arena::Arena;
 use std::collections::HashMap;
 
+use crate::material_manager::MaterialManager;
 use crate::model::{Buffers, Model};
 use crate::rendering::instancing::InstanceType;
 use crate::scene_graph::object3d::{Object3D, ObjectId};
@@ -53,6 +54,8 @@ impl Scene {
 
     pub fn spawn_gltf_scene(
         &mut self,
+        material_manager: &MaterialManager,
+        file_name: &str,
         buffers: Buffers,
         scene: &gltf::Scene,
         instance_type: InstanceType,
@@ -60,7 +63,14 @@ impl Scene {
         let mut last_object_id = None;
 
         for node in scene.nodes() {
-            last_object_id = Some(self.spawn_gltf_node(buffers, &node, None, instance_type));
+            last_object_id = Some(self.spawn_gltf_node(
+                material_manager,
+                file_name,
+                buffers,
+                &node,
+                None,
+                instance_type,
+            ));
         }
 
         last_object_id
@@ -68,6 +78,8 @@ impl Scene {
 
     fn spawn_gltf_node(
         &mut self,
+        material_manager: &MaterialManager,
+        file_name: &str,
         buffers: Buffers,
         node: &gltf::Node,
         parent: Option<ObjectId>,
@@ -98,6 +110,8 @@ impl Scene {
                         .unwrap_or_else(|| format!("{} (Mesh)", node_name));
 
                     let model = Model::from_gltf(
+                        material_manager,
+                        file_name,
                         mesh_name.clone(),
                         mesh,
                         buffers,
@@ -123,7 +137,14 @@ impl Scene {
         }
 
         for child in node.children() {
-            self.spawn_gltf_node(buffers, &child, Some(object_id), instance_type);
+            self.spawn_gltf_node(
+                material_manager,
+                file_name,
+                buffers,
+                &child,
+                Some(object_id),
+                instance_type,
+            );
         }
 
         object_id

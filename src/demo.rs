@@ -5,6 +5,7 @@ use glam::{Quat, Vec3};
 
 use crate::{
     camera::Camera,
+    material_manager::MaterialManager,
     rendering::instancing::InstanceType,
     scene_graph::{object3d::ObjectId, scene::Scene},
 };
@@ -19,7 +20,7 @@ pub struct DemoState {
 }
 
 impl DemoState {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(material_manager: &mut MaterialManager) -> anyhow::Result<Self> {
         let camera = Camera {
             eye: Vec3::new(1.0, 2.0, 1.0),
             target: Vec3::new(0.0, 1.0, 0.0),
@@ -28,8 +29,10 @@ impl DemoState {
 
         let mut scene = Scene::new();
 
-        let (document, buffers, _images) = gltf::import("assets/can/can.gltf")?;
+        let (document, buffers, mut images) = gltf::import("assets/tolkki2/tolkki2.gltf")?;
         let can_scene = document.scenes().next().context("No scenes in gltf")?;
+
+        material_manager.load_all_materials_from_gltf("can", &document, &mut images);
 
         for x in -25..25 {
             for z in -25..25 {
@@ -40,7 +43,13 @@ impl DemoState {
                 let scale = 0.5;
 
                 let can = scene
-                    .spawn_gltf_scene(&buffers, &can_scene, InstanceType::Static)
+                    .spawn_gltf_scene(
+                        material_manager,
+                        "can",
+                        &buffers,
+                        &can_scene,
+                        InstanceType::Static,
+                    )
                     .expect("Expected scene to contain a root node");
 
                 scene.set_object_transform(can, translation, rotation, scale);
@@ -48,13 +57,25 @@ impl DemoState {
         }
 
         let can = scene
-            .spawn_gltf_scene(&buffers, &can_scene, InstanceType::Dynamic)
+            .spawn_gltf_scene(
+                material_manager,
+                "can",
+                &buffers,
+                &can_scene,
+                InstanceType::Dynamic,
+            )
             .expect("Expected scene to contain a root node");
 
         let extra_cans = (0..1000)
             .map(|_| {
                 let can = scene
-                    .spawn_gltf_scene(&buffers, &can_scene, InstanceType::Dynamic)
+                    .spawn_gltf_scene(
+                        material_manager,
+                        "can",
+                        &buffers,
+                        &can_scene,
+                        InstanceType::Dynamic,
+                    )
                     .expect("Expected scene to contain a root node");
 
                 scene.set_object_scale(can, 0.1);

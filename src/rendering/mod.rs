@@ -8,6 +8,7 @@ pub mod mesh_buffers;
 pub mod passes;
 pub mod render_camera;
 pub mod render_common;
+pub mod render_material_manager;
 pub mod render_model;
 pub mod renderer;
 pub mod shader_loader;

@@ -20,9 +20,11 @@ use crate::{
         passes::{
             background_pass::{BackgroundPass, BackgroundPassTextureViews},
             pbr_pass::{PbrPass, PbrTextureViews},
+            render_pass_context::RenderPassContext,
         },
         render_camera::RenderCamera,
         render_common::RenderCommon,
+        render_material_manager::RenderMaterialManager,
         shader_loader::{
             ComputeShaderLoader, PipelineCacheBuilder, RenderShaderLoader, ShaderLoader,
         },
@@ -43,6 +45,7 @@ pub struct Renderer {
     camera: RenderCamera,
     imgui: ImguiRendererState,
     mesh_buffers: MeshBuffers,
+    pub material_manager: RenderMaterialManager,
 
     render_shader_loader: RenderShaderLoader,
     background_pass: BackgroundPass,
@@ -77,8 +80,13 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::MULTI_DRAW_INDIRECT
-                    | wgpu::Features::INDIRECT_FIRST_INSTANCE,
-                required_limits: wgpu::Limits::default(),
+                    | wgpu::Features::INDIRECT_FIRST_INSTANCE
+                    | wgpu::Features::TEXTURE_BINDING_ARRAY
+                    | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING,
+                required_limits: wgpu::Limits {
+                    max_binding_array_elements_per_shader_stage: 128,
+                    ..Default::default()
+                },
                 label: None,
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
@@ -99,11 +107,17 @@ impl Renderer {
 
         let depth_texture = DepthTexture::new(&device, size, "Depth Texture");
 
+        let material_manager = RenderMaterialManager::new(&device, &queue);
+
         let mut render_pipeline_cache_builder = PipelineCacheBuilder::new();
         let background_pass =
             BackgroundPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
-        let pbr_pass =
-            PbrPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
+        let pbr_pass = PbrPass::create(
+            &device,
+            common.clone(),
+            &mut render_pipeline_cache_builder,
+            &material_manager,
+        )?;
         let geometry_pass =
             GeometryPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
         let render_shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
@@ -140,6 +154,7 @@ impl Renderer {
             depth_texture,
             imgui,
             mesh_buffers,
+            material_manager,
 
             render_shader_loader,
             background_pass,
@@ -221,16 +236,21 @@ impl Renderer {
 
         let unified_bind_group = self.instance_manager.bind_group();
 
+        let mut pass_context = RenderPassContext {
+            encoder: &mut encoder,
+            pipeline_cache,
+            instance_bind_group: &unified_bind_group,
+            indirect_buffer,
+            mesh_buffers: &self.mesh_buffers,
+            material_manager: &mut self.material_manager,
+        };
+
         self.pbr_pass.render_indirect(
             &PbrTextureViews {
                 color: view.clone(),
                 depth: self.depth_texture.view().clone(),
             },
-            &mut encoder,
-            pipeline_cache,
-            unified_bind_group,
-            indirect_buffer,
-            &self.mesh_buffers,
+            &mut pass_context,
         );
 
         self.geometry_pass.render_indirect(
@@ -239,11 +259,7 @@ impl Renderer {
                 normal_metallic: self.g_buffer.normal_metallic.view.clone(),
                 depth: self.g_buffer.depth.view().clone(),
             },
-            &mut encoder,
-            pipeline_cache,
-            unified_bind_group,
-            indirect_buffer,
-            &self.mesh_buffers,
+            &mut pass_context,
         );
 
         Ok(RenderResult {

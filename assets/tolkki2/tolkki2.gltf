@@ -1,0 +1,666 @@
+{
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5125,
+      "count": 1572,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 297,
+      "max": [
+        0.134530305862427,
+        6.78896903991699e-05,
+        0.00165467942133546
+      ],
+      "min": [
+        -0.127875432372093,
+        -0.00336378812789917,
+        -0.184046030044556
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 297,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 297,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5125,
+      "count": 858,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 197,
+      "max": [
+        0.306361705064774,
+        1.10723078250885,
+        0.306361705064774
+      ],
+      "min": [
+        -0.306361705064774,
+        0.0873472988605499,
+        -0.306361705064774
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 197,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 197,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 9006,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 1738,
+      "max": [
+        0.330550014972687,
+        1.14199995994568,
+        0.330550014972687
+      ],
+      "min": [
+        -0.330550014972687,
+        5.96046447753906e-08,
+        -0.330550014972687
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 1738,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5126,
+      "count": 1738,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 12,
+      "componentType": 5125,
+      "count": 192,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 13,
+      "componentType": 5126,
+      "count": 66,
+      "max": [
+        0.330550014972687,
+        0.976315021514893,
+        0.330550014972687
+      ],
+      "min": [
+        -0.330550014972687,
+        0.0873472690582275,
+        -0.330550014972687
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 14,
+      "componentType": 5126,
+      "count": 66,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 15,
+      "componentType": 5126,
+      "count": 66,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 16,
+      "componentType": 5125,
+      "count": 6150,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 17,
+      "componentType": 5126,
+      "count": 1431,
+      "max": [
+        0.0873868763446808,
+        0.00601470470428467,
+        0.181857824325562
+      ],
+      "min": [
+        -0.0861907601356506,
+        -0.00812423229217529,
+        -0.0922333672642708
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 18,
+      "componentType": 5126,
+      "count": 1431,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 19,
+      "componentType": 5126,
+      "count": 1431,
+      "type": "VEC2"
+    }
+  ],
+  "asset": {
+    "generator": "Substance Painter 6.2.2",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 6288,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 3564,
+      "byteOffset": 6288,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 3564,
+      "byteOffset": 9852,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 2376,
+      "byteOffset": 13416,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 3432,
+      "byteOffset": 15792,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 2364,
+      "byteOffset": 19224,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 2364,
+      "byteOffset": 21588,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 1576,
+      "byteOffset": 23952,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 36024,
+      "byteOffset": 25528,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 20856,
+      "byteOffset": 61552,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 20856,
+      "byteOffset": 82408,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 13904,
+      "byteOffset": 103264,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 768,
+      "byteOffset": 117168,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 792,
+      "byteOffset": 117936,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 792,
+      "byteOffset": 118728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 528,
+      "byteOffset": 119520,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 24600,
+      "byteOffset": 120048,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 17172,
+      "byteOffset": 144648,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 17172,
+      "byteOffset": 161820,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 11448,
+      "byteOffset": 178992,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 190440,
+      "uri": "tolkki2.bin"
+    }
+  ],
+  "images": [
+    {
+      "uri": "Base_baseColor.png"
+    },
+    {
+      "uri": "Base_occlusionRoughnessMetallic.png"
+    },
+    {
+      "uri": "Base_normal.png"
+    },
+    {
+      "uri": "Klipsu_baseColor.png"
+    },
+    {
+      "uri": "Klipsu_occlusionRoughnessMetallic.png"
+    },
+    {
+      "uri": "Klipsu_normal.png"
+    },
+    {
+      "uri": "Label_baseColor.png"
+    },
+    {
+      "uri": "Label_occlusionRoughnessMetallic.png"
+    },
+    {
+      "uri": "Label_normal.png"
+    },
+    {
+      "uri": "Laeppae_baseColor.png"
+    },
+    {
+      "uri": "Laeppae_occlusionRoughnessMetallic.png"
+    },
+    {
+      "uri": "Laeppae_normal.png"
+    },
+    {
+      "uri": "Sisapinta_baseColor.png"
+    },
+    {
+      "uri": "Sisapinta_occlusionRoughnessMetallic.png"
+    },
+    {
+      "uri": "Sisapinta_normal.png"
+    }
+  ],
+  "materials": [
+    {
+      "alphaMode": "OPAQUE",
+      "name": "Base",
+      "normalTexture": {
+        "index": 2
+      },
+      "occlusionTexture": {
+        "index": 1
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicRoughnessTexture": {
+          "index": 1
+        }
+      }
+    },
+    {
+      "alphaMode": "OPAQUE",
+      "name": "Klipsu",
+      "normalTexture": {
+        "index": 5
+      },
+      "occlusionTexture": {
+        "index": 4
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 3
+        },
+        "metallicRoughnessTexture": {
+          "index": 4
+        }
+      }
+    },
+    {
+      "alphaMode": "OPAQUE",
+      "name": "Label",
+      "normalTexture": {
+        "index": 8
+      },
+      "occlusionTexture": {
+        "index": 7
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 6
+        },
+        "metallicRoughnessTexture": {
+          "index": 7
+        }
+      }
+    },
+    {
+      "alphaMode": "OPAQUE",
+      "name": "Laeppae",
+      "normalTexture": {
+        "index": 11
+      },
+      "occlusionTexture": {
+        "index": 10
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 9
+        },
+        "metallicRoughnessTexture": {
+          "index": 10
+        }
+      }
+    },
+    {
+      "alphaMode": "OPAQUE",
+      "name": "Sisapinta",
+      "normalTexture": {
+        "index": 14
+      },
+      "occlusionTexture": {
+        "index": 13
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 12
+        },
+        "metallicRoughnessTexture": {
+          "index": 13
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "LaeppaeMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 2,
+            "POSITION": 1,
+            "TEXCOORD_0": 3
+          },
+          "indices": 0,
+          "material": 3,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "SisapintaMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 6,
+            "POSITION": 5,
+            "TEXCOORD_0": 7
+          },
+          "indices": 4,
+          "material": 4,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "TolkkiMesh-0",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 10,
+            "POSITION": 9,
+            "TEXCOORD_0": 11
+          },
+          "indices": 8,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "TolkkiMesh-1",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 14,
+            "POSITION": 13,
+            "TEXCOORD_0": 15
+          },
+          "indices": 12,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "KlipsuMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 18,
+            "POSITION": 17,
+            "TEXCOORD_0": 19
+          },
+          "indices": 16,
+          "material": 1,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "children": [
+        1,
+        8
+      ],
+      "name": "ROOT"
+    },
+    {
+      "children": [
+        2,
+        3,
+        4,
+        6
+      ],
+      "name": "Tolkki"
+    },
+    {
+      "mesh": 2,
+      "name": "TolkkiMesh-0"
+    },
+    {
+      "mesh": 3,
+      "name": "TolkkiMesh-1"
+    },
+    {
+      "children": [
+        5
+      ],
+      "name": "Laeppae",
+      "translation": [
+        -0.00426014978438616,
+        1.10637211799622,
+        -0.00708177592605352
+      ]
+    },
+    {
+      "mesh": 0,
+      "name": "LaeppaeMesh"
+    },
+    {
+      "children": [
+        7
+      ],
+      "name": "Sisapinta"
+    },
+    {
+      "mesh": 1,
+      "name": "SisapintaMesh"
+    },
+    {
+      "children": [
+        9
+      ],
+      "name": "Klipsu",
+      "translation": [
+        -0.00493238912895322,
+        1.11951577663422,
+        0.00505573069676757
+      ]
+    },
+    {
+      "mesh": 4,
+      "name": "KlipsuMesh"
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9985,
+      "wrapS": 10497,
+      "wrapT": 10497
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    },
+    {
+      "sampler": 0,
+      "source": 3
+    },
+    {
+      "sampler": 0,
+      "source": 4
+    },
+    {
+      "sampler": 0,
+      "source": 5
+    },
+    {
+      "sampler": 0,
+      "source": 6
+    },
+    {
+      "sampler": 0,
+      "source": 7
+    },
+    {
+      "sampler": 0,
+      "source": 8
+    },
+    {
+      "sampler": 0,
+      "source": 9
+    },
+    {
+      "sampler": 0,
+      "source": 10
+    },
+    {
+      "sampler": 0,
+      "source": 11
+    },
+    {
+      "sampler": 0,
+      "source": 12
+    },
+    {
+      "sampler": 0,
+      "source": 13
+    },
+    {
+      "sampler": 0,
+      "source": 14
+    }
+  ]
+}

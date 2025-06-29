@@ -62,8 +62,11 @@ impl InstanceManager {
             let matrix = object.transform.get_world_matrix().clone();
 
             for primitive in &model.model.primitives {
-                self.drawables
-                    .push(Drawable::new(matrix, primitive.global_index as u32));
+                self.drawables.push(Drawable::new(
+                    matrix,
+                    primitive.global_index as u32,
+                    primitive.material_id.index() as u32,
+                ));
             }
         }
 

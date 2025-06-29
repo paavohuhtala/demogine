@@ -7,10 +7,11 @@ use wgpu::{
 };
 
 use crate::rendering::{
-    mesh_buffers::MeshBuffers,
+    passes::render_pass_context::RenderPassContext,
     render_common::RenderCommon,
+    render_material_manager::RenderMaterialManager,
     render_model::{MODEL_PRIMITIVE_STATE, RENDER_MODEL_VBL},
-    shader_loader::{self, PipelineCache, RenderPipelineId, ShaderDefinition},
+    shader_loader::{self, RenderPipelineId, ShaderDefinition},
     texture::DepthTexture,
 };
 
@@ -34,6 +35,7 @@ impl PbrPass {
         device: &wgpu::Device,
         common: std::sync::Arc<RenderCommon>,
         cache_builder: &mut shader_loader::PipelineCacheBuilder<wgpu::RenderPipeline>,
+        material_manager: &RenderMaterialManager,
     ) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -80,7 +82,11 @@ impl PbrPass {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Default shader render pipeline layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &instance_storage_group_layout],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &instance_storage_group_layout,
+                    material_manager.bind_group_layout(),
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -139,13 +145,9 @@ impl PbrPass {
     pub fn render_indirect(
         &self,
         texture_views: &PbrTextureViews,
-        encoder: &mut wgpu::CommandEncoder,
-        pipeline_cache: &PipelineCache<wgpu::RenderPipeline>,
-        instance_bind_group: &wgpu::BindGroup,
-        indirect_buffer: &wgpu::Buffer,
-        mesh_buffers: &MeshBuffers,
+        context: &mut RenderPassContext,
     ) {
-        let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+        let mut render_pass = context.encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("PBR Pass (Indirect)"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &texture_views.color,
@@ -167,13 +169,17 @@ impl PbrPass {
             timestamp_writes: None,
         });
 
-        let pipeline = pipeline_cache.get(self.pipeline_id);
+        let pipeline = context.pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, instance_bind_group, &[]);
+        render_pass.set_bind_group(1, context.instance_bind_group, &[]);
+        render_pass.set_bind_group(2, context.material_manager.bind_group(), &[]);
 
-        render_pass.set_vertex_buffer(0, mesh_buffers.vertices.slice(..));
-        render_pass.set_index_buffer(mesh_buffers.indices.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.multi_draw_indexed_indirect(indirect_buffer, 0, 32_000);
+        render_pass.set_vertex_buffer(0, context.mesh_buffers.vertices.slice(..));
+        render_pass.set_index_buffer(
+            context.mesh_buffers.indices.slice(..),
+            wgpu::IndexFormat::Uint32,
+        );
+        render_pass.multi_draw_indexed_indirect(context.indirect_buffer, 0, 32_000);
     }
 }

@@ -15,6 +15,7 @@ use crate::{
     asset_pipeline::mesh_baker::{bake_models, BakedMeshes},
     demo::DemoState,
     engine,
+    material_manager::MaterialManager,
     rendering::renderer::Renderer,
 };
 
@@ -31,10 +32,11 @@ struct App {
     last_frame: Instant,
     frame_time_ms: f32,
     baked_primitives: BakedMeshes,
+    material_manager: MaterialManager,
 }
 
 impl App {
-    fn from_demo_state(demo_state: DemoState) -> Self {
+    fn from_demo_state(demo_state: DemoState, material_manager: MaterialManager) -> Self {
         // This doesn't really belong here
         let models = demo_state
             .scene
@@ -52,6 +54,7 @@ impl App {
             last_frame: Instant::now(),
             frame_time_ms: 0.0,
             baked_primitives,
+            material_manager,
         }
     }
 
@@ -102,14 +105,19 @@ impl ApplicationHandler for App {
         let window_attributes = Window::default_attributes();
         let window = event_loop.create_window(window_attributes).unwrap();
         self.setup_imgui(&window);
-        let state = pollster::block_on(Renderer::new(
+
+        let mut renderer = pollster::block_on(Renderer::new(
             Arc::new(window),
             &self.demo_state,
             &self.baked_primitives,
             &mut self.imgui.as_mut().unwrap().context,
         ))
         .unwrap();
-        self.renderer = Some(state);
+
+        renderer
+            .material_manager
+            .load_all_materials(&self.material_manager);
+        self.renderer = Some(renderer);
     }
 
     fn window_event(
@@ -146,8 +154,13 @@ impl ApplicationHandler for App {
                 let frame_time_ms = self.frame_time_ms;
                 Self::show_frame_time_overlay(&ui, frame_time_ms);
 
-                engine::update(&mut self.demo_state, renderer, ui)
-                    .expect("Error during engine::update");
+                engine::update(
+                    &mut self.demo_state,
+                    renderer,
+                    &mut self.material_manager,
+                    ui,
+                )
+                .expect("Error during engine::update");
 
                 match renderer.render(&mut self.demo_state, ui) {
                     Ok(result) => {
@@ -186,9 +199,11 @@ impl ApplicationHandler for App {
 }
 
 pub async fn run() -> anyhow::Result<()> {
-    let event_loop = EventLoop::new().context("Failed to create event loop")?;
-    let demo_state = DemoState::new().context("Failed to create game state")?;
-    let mut app = App::from_demo_state(demo_state);
+    let event_loop: EventLoop<()> = EventLoop::new().context("Failed to create event loop")?;
+    let mut material_manager = MaterialManager::new();
+    let demo_state =
+        DemoState::new(&mut material_manager).context("Failed to create game state")?;
+    let mut app = App::from_demo_state(demo_state, material_manager);
     event_loop.run_app(&mut app)?;
 
     Ok(())

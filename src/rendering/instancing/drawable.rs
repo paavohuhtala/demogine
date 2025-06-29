@@ -6,15 +6,17 @@ use glam::Mat4;
 pub struct Drawable {
     pub model_matrix: Mat4,
     pub primitive_index: u32,
-    _padding: [u32; 3],
+    pub material_id: u32,
+    _padding: [u32; 2],
 }
 
 impl Drawable {
-    pub fn new(model_matrix: Mat4, primitive_index: u32) -> Self {
+    pub fn new(model_matrix: Mat4, primitive_index: u32, material_id: u32) -> Self {
         Self {
             model_matrix,
             primitive_index,
-            _padding: [0; 3],
+            material_id,
+            _padding: [0; 2],
         }
     }
 }
