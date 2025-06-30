@@ -85,6 +85,7 @@ impl RenderMaterialManager {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture manager bind group layout"),
             entries: &[
+                // Material info buffer
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -95,6 +96,7 @@ impl RenderMaterialManager {
                     },
                     count: None,
                 },
+                // Texture views
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -105,6 +107,7 @@ impl RenderMaterialManager {
                     },
                     count: Some(NonZeroU32::new(Self::MAX_TEXTURE_COUNT).unwrap()),
                 },
+                // Sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,

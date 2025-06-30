@@ -1,24 +1,29 @@
+use std::sync::Arc;
+
 use wgpu::{
     LoadOp, PipelineCompilationOptions, RenderPassColorAttachment,
-    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-    ShaderModuleDescriptor, StoreOp, TextureView, VertexState,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor, StoreOp,
+    TextureView, VertexState,
 };
 
 use crate::rendering::{
     config::RenderConfig,
     deferred::gbuffer::GBuffer,
-    instancing,
-    passes::render_pass_context::RenderPassContext,
-    render_common::RenderCommon,
+    instancing::{self, DrawableBuffers},
+    mesh_buffers::MeshBuffers,
+    passes::render_pass_context::{RenderPassContext, RenderPassCreationContext},
     render_model::RENDER_MODEL_VBL,
-    shader_loader::{PipelineCacheBuilder, RenderPipelineId, ShaderDefinition},
+    shader_loader::{RenderPipelineId, ShaderDefinition},
     texture::DepthTexture,
+    util::bind_group_builder::BindGroupBuilder,
 };
 
 pub struct GeometryPass {
     config: &'static RenderConfig,
     pipeline_id: RenderPipelineId,
     camera_bind_group: wgpu::BindGroup,
+    mesh_buffers: Arc<MeshBuffers>,
+    drawable_buffers: Arc<DrawableBuffers>,
 }
 
 pub struct GeometryPassTextureViews {
@@ -33,127 +38,96 @@ const SHADER_DEF: ShaderDefinition = ShaderDefinition {
 };
 
 impl GeometryPass {
-    pub fn create(
-        device: &wgpu::Device,
-        config: &'static RenderConfig,
-        common: std::sync::Arc<RenderCommon>,
-        cache_builder: &mut PipelineCacheBuilder<wgpu::RenderPipeline>,
-    ) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    pub fn new(context: &mut RenderPassCreationContext) -> Self {
+        let device = &context.shared.device;
+        let common = context.shared.common.clone();
+        let config = context.shared.config;
+        let cache_builder = &mut context.cache_builder;
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera_bind_group"),
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: common.camera_uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        let instance_storage_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Drawable bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let (camera_bind_group_layout, camera_bind_group) =
+            BindGroupBuilder::new("camera", wgpu::ShaderStages::VERTEX)
+                .uniform(
+                    0,
+                    "Camera uniform buffer",
+                    common.camera_uniform_buffer.as_entire_binding(),
+                )
+                .build(device);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render pipeline layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &instance_storage_group_layout],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    context
+                        .shared
+                        .drawable_buffers
+                        .visible_drawables
+                        .bind_group_layout(),
+                ],
                 push_constant_ranges: &[],
             });
 
         let pipeline_id = cache_builder.add_shader(
             SHADER_DEF,
-            Box::new(
-                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
-                    let shader = device.create_shader_module(ShaderModuleDescriptor {
-                        label: Some(shader_def.name),
-                        source: wgpu::ShaderSource::Wgsl(source.into()),
-                    });
+            Box::new(move |device, shader_module| {
+                let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+                    label: Some("Geometry pass render pipeline"),
+                    layout: Some(&render_pipeline_layout),
+                    vertex: VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[RENDER_MODEL_VBL],
+                        compilation_options: PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format: GBuffer::COLOR_ROUGHNESS_FORMAT,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: GBuffer::NORMAL_METALLIC_FORMAT,
+                                blend: Some(wgpu::BlendState::REPLACE),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
+                        compilation_options: PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Cw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: DepthTexture::DEPTH_FORMAT,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
 
-                    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-                        label: Some("Geometry pass render pipeline"),
-                        layout: Some(&render_pipeline_layout),
-                        vertex: VertexState {
-                            module: &shader,
-                            entry_point: Some("vs_main"),
-                            buffers: &[RENDER_MODEL_VBL],
-                            compilation_options: PipelineCompilationOptions::default(),
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: Some("fs_main"),
-                            targets: &[
-                                Some(wgpu::ColorTargetState {
-                                    format: GBuffer::COLOR_ROUGHNESS_FORMAT,
-                                    blend: Some(wgpu::BlendState::REPLACE),
-                                    write_mask: wgpu::ColorWrites::ALL,
-                                }),
-                                Some(wgpu::ColorTargetState {
-                                    format: GBuffer::NORMAL_METALLIC_FORMAT,
-                                    blend: Some(wgpu::BlendState::REPLACE),
-                                    write_mask: wgpu::ColorWrites::ALL,
-                                }),
-                            ],
-                            compilation_options: PipelineCompilationOptions::default(),
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Cw,
-                            cull_mode: Some(wgpu::Face::Back),
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            unclipped_depth: false,
-                            conservative: false,
-                        },
-                        depth_stencil: Some(wgpu::DepthStencilState {
-                            format: DepthTexture::DEPTH_FORMAT,
-                            depth_write_enabled: true,
-                            depth_compare: wgpu::CompareFunction::Less,
-                            stencil: wgpu::StencilState::default(),
-                            bias: wgpu::DepthBiasState::default(),
-                        }),
-                        multisample: wgpu::MultisampleState::default(),
-                        multiview: None,
-                        cache: None,
-                    });
-
-                    Ok(pipeline)
-                },
-            ),
+                Ok(pipeline)
+            }),
         );
 
-        Ok(GeometryPass {
+        GeometryPass {
             config,
             pipeline_id,
             camera_bind_group,
-        })
+            mesh_buffers: context.shared.mesh_buffers.clone(),
+            drawable_buffers: context.shared.drawable_buffers.clone(),
+        }
     }
 
     pub fn render_indirect(
@@ -196,11 +170,11 @@ impl GeometryPass {
         let pipeline = context.pipeline_cache.get(self.pipeline_id);
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, context.drawable_bind_group, &[]);
+        render_pass.set_bind_group(1, self.drawable_buffers.visible_drawables.bind_group(), &[]);
 
-        render_pass.set_vertex_buffer(0, context.mesh_buffers.vertices.slice(..));
+        render_pass.set_vertex_buffer(0, self.mesh_buffers.vertices.slice(..));
         render_pass.set_index_buffer(
-            context.mesh_buffers.indices.slice(..),
+            self.mesh_buffers.indices.slice(..),
             wgpu::IndexFormat::Uint32,
         );
 

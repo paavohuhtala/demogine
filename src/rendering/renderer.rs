@@ -16,12 +16,15 @@ use crate::{
         },
         global_uniform::GlobalUniformState,
         imgui_renderer::{create_imgui_renderer, ImguiRendererState},
-        instancing::InstanceManager,
+        instancing::{DrawableBuffers, DrawableManager},
         mesh_buffers::MeshBuffers,
         passes::{
             background_pass::{BackgroundPass, BackgroundPassTextureViews},
             pbr_pass::{PbrPass, PbrTextureViews},
-            render_pass_context::RenderPassContext,
+            render_pass_context::{
+                ComputePassCreationContext, PassCreationContext, RenderPassContext,
+                RenderPassCreationContext,
+            },
         },
         render_camera::RenderCamera,
         render_common::RenderCommon,
@@ -48,8 +51,10 @@ pub struct Renderer {
     depth_texture: DepthTexture,
     camera: RenderCamera,
     imgui: ImguiRendererState,
-    mesh_buffers: MeshBuffers,
     pub material_manager: RenderMaterialManager,
+
+    _mesh_buffers: Arc<MeshBuffers>,
+    _drawable_buffers: Arc<DrawableBuffers>,
 
     render_shader_loader: RenderShaderLoader,
     background_pass: BackgroundPass,
@@ -57,7 +62,7 @@ pub struct Renderer {
     geometry_pass: GeometryPass,
 
     compute_shader_loader: ComputeShaderLoader,
-    instance_manager: InstanceManager,
+    instance_manager: DrawableManager,
 }
 
 impl Renderer {
@@ -124,35 +129,42 @@ impl Renderer {
 
         let material_manager = RenderMaterialManager::new(&device, &queue);
 
-        let mut render_pipeline_cache_builder = PipelineCacheBuilder::new();
-        let background_pass =
-            BackgroundPass::create(&device, common.clone(), &mut render_pipeline_cache_builder)?;
-        let pbr_pass = PbrPass::create(
-            &device,
-            config,
-            common.clone(),
-            &mut render_pipeline_cache_builder,
-            &material_manager,
-        )?;
-        let geometry_pass = GeometryPass::create(
-            &device,
-            config,
-            common.clone(),
-            &mut render_pipeline_cache_builder,
-        )?;
-        let render_shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
-
         let g_buffer = GBuffer::new(&device, size);
 
-        let mesh_buffers = MeshBuffers::new(&device, baked_primitives);
-
+        let mut render_pipeline_cache_builder = PipelineCacheBuilder::new();
         let mut compute_pipeline_cache_builder = PipelineCacheBuilder::new();
-        let instance_manager = InstanceManager::new(
-            &device,
+
+        let mesh_buffers = MeshBuffers::new(&device, baked_primitives);
+        let mesh_buffers = Arc::new(mesh_buffers);
+        let drawable_buffers = DrawableBuffers::new_default_capacity(&device);
+        let drawable_buffers = Arc::new(drawable_buffers);
+
+        let pass_creation_context = PassCreationContext {
+            device: device.clone(),
             config,
-            &mesh_buffers.meshes,
-            &mut compute_pipeline_cache_builder,
-        );
+            common: common.clone(),
+            drawable_buffers: drawable_buffers.clone(),
+            mesh_buffers: mesh_buffers.clone(),
+        };
+
+        let mut render_pass_context = RenderPassCreationContext {
+            shared: &pass_creation_context,
+            cache_builder: &mut render_pipeline_cache_builder,
+            material_manager: &material_manager,
+            camera_uniform_buffer: &camera.uniform_buffer,
+        };
+
+        let mut compute_pass_context = ComputePassCreationContext {
+            shared: &pass_creation_context,
+            cache_builder: &mut compute_pipeline_cache_builder,
+        };
+
+        let background_pass = BackgroundPass::create(&mut render_pass_context)?;
+        let pbr_pass = PbrPass::new(&mut render_pass_context);
+        let geometry_pass = GeometryPass::new(&mut render_pass_context);
+        let render_shader_loader = ShaderLoader::new(device.clone(), render_pipeline_cache_builder);
+
+        let instance_manager = DrawableManager::new(&mut compute_pass_context);
         let compute_shader_loader =
             ShaderLoader::new(device.clone(), compute_pipeline_cache_builder);
 
@@ -176,7 +188,7 @@ impl Renderer {
             camera,
             depth_texture,
             imgui,
-            mesh_buffers,
+            _mesh_buffers: mesh_buffers,
             material_manager,
 
             render_shader_loader,
@@ -186,6 +198,7 @@ impl Renderer {
 
             compute_shader_loader,
             instance_manager,
+            _drawable_buffers: drawable_buffers,
         })
     }
 
@@ -258,10 +271,8 @@ impl Renderer {
         let mut pass_context = RenderPassContext {
             encoder: &mut encoder,
             pipeline_cache,
-            drawable_bind_group: self.instance_manager.visible_drawable_bind_group(),
             draw_commands_buffer: self.instance_manager.draw_commands_buffer(),
             draw_commands_count_buffer: self.instance_manager.draw_commands_count_buffer(),
-            mesh_buffers: &self.mesh_buffers,
             material_manager: &mut self.material_manager,
         };
 

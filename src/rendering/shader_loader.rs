@@ -32,7 +32,7 @@ impl Pipeline for wgpu::RenderPipeline {}
 impl Pipeline for wgpu::ComputePipeline {}
 
 type PipelineFactory<T> =
-    Box<dyn Sync + Send + Fn(&wgpu::Device, &ShaderDefinition, &str) -> anyhow::Result<T>>;
+    Box<dyn Sync + Send + Fn(&wgpu::Device, wgpu::ShaderModule) -> anyhow::Result<T>>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ShaderDefinition {
@@ -301,7 +301,12 @@ fn compile_file<T: Pipeline>(
 
     device.push_error_scope(wgpu::ErrorFilter::Validation);
 
-    let pipeline = factory(device, shader_def, &shader_code);
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(shader_def.name),
+        source: wgpu::ShaderSource::Wgsl(shader_code.into()),
+    });
+
+    let pipeline = factory(device, shader_module);
 
     device
         .poll(PollType::Wait)

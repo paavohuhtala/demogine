@@ -1,14 +1,8 @@
-use std::sync::Arc;
-
-use wgpu::{
-    Device, MultisampleState, PipelineCompilationOptions, RenderPassDescriptor, ShaderSource,
-};
+use wgpu::{MultisampleState, PipelineCompilationOptions, RenderPassDescriptor};
 
 use crate::rendering::{
-    render_common::RenderCommon,
-    shader_loader::{
-        PipelineCacheBuilder, RenderPipelineCache, RenderPipelineId, ShaderDefinition,
-    },
+    passes::render_pass_context::RenderPassCreationContext,
+    shader_loader::{RenderPipelineCache, RenderPipelineId, ShaderDefinition},
 };
 
 pub struct BackgroundPass {
@@ -26,11 +20,10 @@ pub struct BackgroundPassTextureViews {
 }
 
 impl BackgroundPass {
-    pub fn create(
-        device: &Device,
-        common: Arc<RenderCommon>,
-        cache_builder: &mut PipelineCacheBuilder<wgpu::RenderPipeline>,
-    ) -> anyhow::Result<BackgroundPass> {
+    pub fn create(context: &mut RenderPassCreationContext) -> anyhow::Result<BackgroundPass> {
+        let device = &context.shared.device;
+        let common = context.shared.common.clone();
+
         let global_uniform_bind_group = common.global_uniform.bind_group.clone();
 
         let quad_render_pipeline_layout =
@@ -40,52 +33,45 @@ impl BackgroundPass {
                 push_constant_ranges: &[],
             });
 
-        let pipeline_id = cache_builder.add_shader(
+        let pipeline_id = context.cache_builder.add_shader(
             FULLSCREEN_QUAD_SHADER,
-            Box::new(
-                move |device: &Device, shader_def: &ShaderDefinition, source: &str| {
-                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some(shader_def.name),
-                        source: ShaderSource::Wgsl(source.into()),
-                    });
+            Box::new(move |device, shader_module| {
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Background Pass Pipeline"),
+                    layout: Some(&quad_render_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[],
+                        compilation_options: PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: common.output_surface_config.read().unwrap().format,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                });
 
-                    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("Background Pass Pipeline"),
-                        layout: Some(&quad_render_pipeline_layout),
-                        vertex: wgpu::VertexState {
-                            module: &shader,
-                            entry_point: Some("vs_main"),
-                            buffers: &[],
-                            compilation_options: PipelineCompilationOptions::default(),
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &shader,
-                            entry_point: Some("fs_main"),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format: common.output_surface_config.read().unwrap().format,
-                                blend: Some(wgpu::BlendState::REPLACE),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
-                            compilation_options: PipelineCompilationOptions::default(),
-                        }),
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleList,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Ccw,
-                            cull_mode: None,
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            unclipped_depth: false,
-                            conservative: false,
-                        },
-                        depth_stencil: None,
-                        multisample: MultisampleState::default(),
-                        multiview: None,
-                        cache: None,
-                    });
-
-                    Ok(pipeline)
-                },
-            ),
+                Ok(pipeline)
+            }),
         );
 
         Ok(Self {

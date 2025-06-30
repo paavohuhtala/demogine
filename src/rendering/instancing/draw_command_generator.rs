@@ -5,11 +5,10 @@ use wgpu::wgt::DrawIndexedIndirectArgs;
 use crate::{
     math::frustum::Frustum,
     rendering::{
-        config::RenderConfig,
-        instancing,
-        shader_loader::{
-            ComputePipelineCache, ComputePipelineId, PipelineCacheBuilder, ShaderDefinition,
-        },
+        instancing::{self},
+        passes::render_pass_context::ComputePassCreationContext,
+        shader_loader::{ComputePipelineCache, ComputePipelineId, ShaderDefinition},
+        util::bind_group_builder::BindGroupBuilder,
     },
 };
 
@@ -46,14 +45,14 @@ pub struct DrawCommandGenerator {
 }
 
 impl DrawCommandGenerator {
-    pub fn new(
-        device: &wgpu::Device,
-        config: &'static RenderConfig,
-        drawable_buffer: &wgpu::Buffer,
-        visible_drawable_buffer: &wgpu::Buffer,
-        mesh_info_buffer: &wgpu::Buffer,
-        pipeline_builder: &mut PipelineCacheBuilder<wgpu::ComputePipeline>,
-    ) -> Self {
+    pub fn new(context: &mut ComputePassCreationContext) -> Self {
+        let device = &context.shared.device;
+
+        let visible_drawable_buffer = context.shared.drawable_buffers.visible_drawables.buffer();
+        let drawable_buffer = context.shared.drawable_buffers.all_drawables.buffer();
+        let mesh_info_buffer = &context.shared.mesh_buffers.meshes;
+        let pipeline_builder = &mut context.cache_builder;
+
         let frustum_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Frustum buffer"),
             size: std::mem::size_of::<GpuFrustum>() as u64,
@@ -79,123 +78,48 @@ impl DrawCommandGenerator {
             mapped_at_creation: false,
         });
 
-        let culling_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Frustum culling bind group layout"),
-                entries: &[
-                    // Frustum uniform buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Mesh info buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Drawable buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Drawable visibility buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Visible drawables by mesh buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        let culling_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Frustum culling bind group"),
-            layout: &culling_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: frustum_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: mesh_info_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: drawable_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: drawable_visibility_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: visible_drawables_by_mesh_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let (culling_bind_group_layout, culling_bind_group) =
+            BindGroupBuilder::new("Frustum culling", wgpu::ShaderStages::COMPUTE)
+                .uniform(
+                    0,
+                    "Frustum uniform buffer",
+                    frustum_buffer.as_entire_binding(),
+                )
+                .storage_r(1, "Mesh info buffer", mesh_info_buffer.as_entire_binding())
+                .storage_r(2, "Drawable buffer", drawable_buffer.as_entire_binding())
+                .storage_rw(
+                    3,
+                    "Drawable visibility buffer",
+                    drawable_visibility_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    4,
+                    "Visible drawables by mesh buffer",
+                    visible_drawables_by_mesh_buffer.as_entire_binding(),
+                )
+                .build(device);
 
         let culling_pipeline_id = pipeline_builder.add_shader(
             FRUSTUM_CULLING_SHADER,
-            Box::new(
-                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
-                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some(shader_def.name),
-                        source: wgpu::ShaderSource::Wgsl(source.into()),
+            Box::new(move |device, shader_module| {
+                let compute_pipeline =
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Frustum culling compute pipeline"),
+                        layout: Some(&device.create_pipeline_layout(
+                            &wgpu::PipelineLayoutDescriptor {
+                                label: Some("Frustum culling pipeline layout"),
+                                bind_group_layouts: &[&culling_bind_group_layout],
+                                push_constant_ranges: &[],
+                            },
+                        )),
+                        module: &shader_module,
+                        entry_point: Some("main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        cache: None,
                     });
 
-                    let compute_pipeline =
-                        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                            label: Some("Frustum culling compute pipeline"),
-                            layout: Some(&device.create_pipeline_layout(
-                                &wgpu::PipelineLayoutDescriptor {
-                                    label: Some("Frustum culling pipeline layout"),
-                                    bind_group_layouts: &[&culling_bind_group_layout],
-                                    push_constant_ranges: &[],
-                                },
-                            )),
-                            module: &shader,
-                            entry_point: Some("main"),
-                            compilation_options: wgpu::PipelineCompilationOptions::default(),
-                            cache: None,
-                        });
-
-                    Ok(compute_pipeline)
-                },
-            ),
+                Ok(compute_pipeline)
+            }),
         );
 
         let base_offsets_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -226,123 +150,52 @@ impl DrawCommandGenerator {
             mapped_at_creation: false,
         });
 
-        let generate_draws_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Generate draws bind group layout"),
-                entries: &[
-                    // Mesh info buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Visible drawables by mesh buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Base offsets buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Draw commands buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Draw commands count buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        let generate_draws_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Generate draws bind group"),
-            layout: &generate_draws_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: mesh_info_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: visible_drawables_by_mesh_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: base_offsets_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: draw_commands_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: draw_commands_count_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let (generate_draws_bind_group_layout, generate_draws_bind_group) =
+            BindGroupBuilder::new("Generate draws", wgpu::ShaderStages::COMPUTE)
+                .storage_r(0, "Mesh info buffer", mesh_info_buffer.as_entire_binding())
+                .storage_r(
+                    1,
+                    "Visible drawables by mesh buffer",
+                    visible_drawables_by_mesh_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    2,
+                    "Base offsets buffer",
+                    base_offsets_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    3,
+                    "Draw commands buffer",
+                    draw_commands_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    4,
+                    "Draw commands count buffer",
+                    draw_commands_count_buffer.as_entire_binding(),
+                )
+                .build(device);
 
         let generate_draws_pipeline_id = pipeline_builder.add_shader(
             GENERATE_DRAWS_SHADER,
-            Box::new(
-                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
-                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some(shader_def.name),
-                        source: wgpu::ShaderSource::Wgsl(source.into()),
+            Box::new(move |device, shader_module| {
+                let compute_pipeline =
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Generate draws compute pipeline"),
+                        layout: Some(&device.create_pipeline_layout(
+                            &wgpu::PipelineLayoutDescriptor {
+                                label: Some("Generate draws pipeline layout"),
+                                bind_group_layouts: &[&generate_draws_bind_group_layout],
+                                push_constant_ranges: &[],
+                            },
+                        )),
+                        module: &shader_module,
+                        entry_point: Some("main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        cache: None,
                     });
 
-                    let compute_pipeline =
-                        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                            label: Some("Generate draws compute pipeline"),
-                            layout: Some(&device.create_pipeline_layout(
-                                &wgpu::PipelineLayoutDescriptor {
-                                    label: Some("Generate draws pipeline layout"),
-                                    bind_group_layouts: &[&generate_draws_bind_group_layout],
-                                    push_constant_ranges: &[],
-                                },
-                            )),
-                            module: &shader,
-                            entry_point: Some("main"),
-                            compilation_options: wgpu::PipelineCompilationOptions::default(),
-                            cache: None,
-                        });
-
-                    Ok(compute_pipeline)
-                },
-            ),
+                Ok(compute_pipeline)
+            }),
         );
 
         let drawable_local_indices_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -354,124 +207,52 @@ impl DrawCommandGenerator {
             mapped_at_creation: false,
         });
 
-        let gather_instance_data_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Gather instance data bind group layout"),
-                entries: &[
-                    // Drawable buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Drawable visibility buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Base offsets buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Visible drawable buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Drawable local indices buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        let gather_instance_data_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Gather instance data bind group"),
-                layout: &gather_instance_data_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: drawable_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: drawable_visibility_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: base_offsets_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: visible_drawable_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: drawable_local_indices_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+        let (gather_instance_data_bind_group_layout, gather_instance_data_bind_group) =
+            BindGroupBuilder::new("Gather instance data", wgpu::ShaderStages::COMPUTE)
+                .storage_r(0, "Drawable buffer", drawable_buffer.as_entire_binding())
+                .storage_r(
+                    1,
+                    "Drawable visibility buffer",
+                    drawable_visibility_buffer.as_entire_binding(),
+                )
+                .storage_r(
+                    2,
+                    "Base offsets buffer",
+                    base_offsets_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    3,
+                    "Visible drawable buffer",
+                    visible_drawable_buffer.as_entire_binding(),
+                )
+                .storage_rw(
+                    4,
+                    "Drawable local indices buffer",
+                    drawable_local_indices_buffer.as_entire_binding(),
+                )
+                .build(device);
 
         let gather_instance_data_pipeline_id = pipeline_builder.add_shader(
             GATHER_INSTANCE_DATA_SHADER,
-            Box::new(
-                move |device: &wgpu::Device, shader_def: &ShaderDefinition, source: &str| {
-                    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: Some(shader_def.name),
-                        source: wgpu::ShaderSource::Wgsl(source.into()),
+            Box::new(move |device, shader_module| {
+                let compute_pipeline =
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("Gather instance data compute pipeline"),
+                        layout: Some(&device.create_pipeline_layout(
+                            &wgpu::PipelineLayoutDescriptor {
+                                label: Some("Gather instance data pipeline layout"),
+                                bind_group_layouts: &[&gather_instance_data_bind_group_layout],
+                                push_constant_ranges: &[],
+                            },
+                        )),
+                        module: &shader_module,
+                        entry_point: Some("main"),
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        cache: None,
                     });
 
-                    let compute_pipeline =
-                        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                            label: Some("Gather instance data compute pipeline"),
-                            layout: Some(&device.create_pipeline_layout(
-                                &wgpu::PipelineLayoutDescriptor {
-                                    label: Some("Gather instance data pipeline layout"),
-                                    bind_group_layouts: &[&gather_instance_data_bind_group_layout],
-                                    push_constant_ranges: &[],
-                                },
-                            )),
-                            module: &shader,
-                            entry_point: Some("main"),
-                            compilation_options: wgpu::PipelineCompilationOptions::default(),
-                            cache: None,
-                        });
-
-                    Ok(compute_pipeline)
-                },
-            ),
+                Ok(compute_pipeline)
+            }),
         );
 
         Self {

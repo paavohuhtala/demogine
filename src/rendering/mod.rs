@@ -13,3 +13,4 @@ pub mod render_model;
 pub mod renderer;
 pub mod shader_loader;
 pub mod texture;
+mod util;

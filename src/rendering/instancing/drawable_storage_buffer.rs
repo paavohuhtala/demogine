@@ -1,19 +1,31 @@
-use wgpu::{BindingType, BufferBindingType, BufferUsages, ShaderStages};
+use wgpu::{BufferUsages, ShaderStages};
 
-use crate::rendering::instancing::drawable::Drawable;
+use crate::rendering::{
+    instancing::drawable::Drawable, util::bind_group_builder::BindGroupBuilder,
+};
 
-pub struct DrawableStorageBuffer {
+#[derive(Clone)]
+pub struct DrawableBuffer {
     buffer: wgpu::Buffer,
+    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
 }
 
-impl DrawableStorageBuffer {
+impl DrawableBuffer {
     pub fn new(device: &wgpu::Device, initial_capacity: u64) -> Self {
         let buffer = Self::create_buffer(device, initial_capacity);
-        let bind_group_layout = Self::create_bind_group_layout(device);
-        let bind_group = Self::create_bind_group(device, &bind_group_layout, &buffer);
+        let (bind_group_layout, bind_group) = BindGroupBuilder::new(
+            "Drawable storage",
+            ShaderStages::VERTEX_FRAGMENT | ShaderStages::COMPUTE,
+        )
+        .storage_r(0, "Drawable storage buffer", buffer.as_entire_binding())
+        .build(device);
 
-        Self { buffer, bind_group }
+        Self {
+            buffer,
+            bind_group_layout,
+            bind_group,
+        }
     }
 
     fn create_buffer(device: &wgpu::Device, capacity: u64) -> wgpu::Buffer {
@@ -22,37 +34,6 @@ impl DrawableStorageBuffer {
             size: std::mem::size_of::<Drawable>() as u64 * capacity,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        })
-    }
-
-    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Drawable storage bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        })
-    }
-
-    fn create_bind_group(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        buffer: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Drawable storage bind group"),
-            layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
         })
     }
 
@@ -70,11 +51,15 @@ impl DrawableStorageBuffer {
         queue.write_buffer(&self.buffer, offset, bytemuck::cast_slice(instances));
     }
 
-    pub fn bind_group(&self) -> &wgpu::BindGroup {
-        &self.bind_group
-    }
-
     pub fn buffer(&self) -> &wgpu::Buffer {
         &self.buffer
+    }
+
+    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.bind_group_layout
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
     }
 }

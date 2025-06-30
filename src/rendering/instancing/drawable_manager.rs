@@ -1,45 +1,29 @@
+use std::sync::Arc;
+
 use crate::{
     math::frustum::Frustum,
     rendering::{
-        config::RenderConfig,
         instancing::{
-            draw_command_generator::DrawCommandGenerator, drawable::Drawable,
-            drawable_storage_buffer::DrawableStorageBuffer,
+            draw_command_generator::DrawCommandGenerator, drawable::Drawable, DrawableBuffers,
         },
-        shader_loader::{ComputePipelineCache, PipelineCacheBuilder},
+        passes::render_pass_context::ComputePassCreationContext,
+        shader_loader::ComputePipelineCache,
     },
     scene_graph::scene::Scene,
 };
 
-pub struct InstanceManager {
-    drawable_buffer: DrawableStorageBuffer,
-    visible_drawable_buffer: DrawableStorageBuffer,
+pub struct DrawableManager {
+    drawable_buffers: Arc<DrawableBuffers>,
     drawables: Vec<Drawable>,
     draw_command_generator: DrawCommandGenerator,
 }
 
-impl InstanceManager {
-    pub fn new(
-        device: &wgpu::Device,
-        config: &'static RenderConfig,
-        mesh_info_buffer: &wgpu::Buffer,
-        pipeline_builder: &mut PipelineCacheBuilder<wgpu::ComputePipeline>,
-    ) -> Self {
-        let drawable_buffer = DrawableStorageBuffer::new(device, 32_000);
-        let visible_drawable_buffer = DrawableStorageBuffer::new(device, 32_000);
-
-        let draw_command_generator = DrawCommandGenerator::new(
-            device,
-            config,
-            drawable_buffer.buffer(),
-            visible_drawable_buffer.buffer(),
-            mesh_info_buffer,
-            pipeline_builder,
-        );
+impl DrawableManager {
+    pub fn new(context: &mut ComputePassCreationContext) -> Self {
+        let draw_command_generator = DrawCommandGenerator::new(context);
 
         Self {
-            drawable_buffer,
-            visible_drawable_buffer,
+            drawable_buffers: context.shared.drawable_buffers.clone(),
             draw_command_generator,
             drawables: Vec::new(),
         }
@@ -48,7 +32,8 @@ impl InstanceManager {
     pub fn update_from_scene(&mut self, scene: &Scene, queue: &wgpu::Queue, imgui_ui: &imgui::Ui) {
         self.gather_drawables_from_scene(scene, imgui_ui);
 
-        self.drawable_buffer
+        self.drawable_buffers
+            .all_drawables
             .write_drawables_at_offset(queue, &self.drawables, 0);
     }
 
@@ -85,10 +70,6 @@ impl InstanceManager {
             .build(|| {
                 imgui_ui.text(format!("Total drawables: {}", self.drawables.len()));
             });
-    }
-
-    pub fn visible_drawable_bind_group(&self) -> &wgpu::BindGroup {
-        self.visible_drawable_buffer.bind_group()
     }
 
     pub fn cull_and_generate_commands(
