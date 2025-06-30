@@ -4,11 +4,11 @@ pub fn update(
     state: &mut DemoState,
     _renderer: &mut Renderer,
     material_manager: &mut MaterialManager,
-    ui: &mut imgui::Ui,
+    ui: &imgui::Ui,
 ) -> anyhow::Result<()> {
     state.scene.early_update();
     state.update();
-    state.scene.late_update();
+    state.scene.late_update(ui);
 
     material_manager.draw_ui(ui);
 

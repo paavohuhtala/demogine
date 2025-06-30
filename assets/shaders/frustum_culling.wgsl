@@ -1,4 +1,4 @@
-#import shared::drawable::Drawable
+#import shared::drawable::InputDrawable
 #import shared::mesh_info::MeshInfo
 #import shared::frustum::Frustum
 #import shared::commands::DrawIndexedIndirectCommand
@@ -12,9 +12,9 @@ struct AABB {
 @group(0) @binding(0)
 var<uniform> frustum: Frustum;
 @group(0) @binding(1)
-var<storage, read> primitives: array<MeshInfo>;
+var<storage, read> meshes: array<MeshInfo>;
 @group(0) @binding(2)
-var<storage, read> drawables: array<Drawable>;
+var<storage, read> drawables: array<InputDrawable>;
 
 @group(0) @binding(3)
 var<storage, read_write> drawable_visibility: array<u32>;
@@ -33,13 +33,13 @@ fn main(
 
     let drawable = drawables[index];
 
-    let primitive_index = drawable.primitive_index;
-    let primitive = primitives[primitive_index];
-    let aabb = AABB(primitive.aabb_min, primitive.aabb_max);
+    let mesh_index = drawable.mesh_index;
+    let mesh = meshes[mesh_index];
+    let aabb = AABB(mesh.aabb_min, mesh.aabb_max);
 
     if is_inside_frustum_transformed(aabb, drawable.model_matrix, frustum) {
         drawable_visibility[index] = 1;
-        atomicAdd(&visible_drawables_by_mesh[primitive_index], 1u);
+        atomicAdd(&visible_drawables_by_mesh[mesh_index], 1u);
     } else {
         drawable_visibility[index] = 0;
     }

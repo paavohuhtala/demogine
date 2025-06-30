@@ -151,7 +151,10 @@ impl Scene {
     }
 
     /// Updates all object transforms in hierarchical order
-    fn update_transforms(&self) {
+    fn update_transforms(&self, imgui: &imgui::Ui) {
+        let mut root_object_count = 0;
+        let mut total_update_count = 0;
+
         // Find all root objects (objects without parents)
         let root_objects = self.objects.iter().filter_map(|(id, object)| {
             if object.parent_id.is_none() {
@@ -163,24 +166,50 @@ impl Scene {
 
         // Update transforms starting from root objects
         for root_id in root_objects {
-            self.update_object_transform_recursive(root_id, Mat4::IDENTITY);
+            root_object_count += 1;
+            self.update_object_transform_recursive(
+                root_id,
+                Mat4::IDENTITY,
+                imgui,
+                &mut total_update_count,
+            );
         }
+
+        imgui.window("Scene graph transform update").build(|| {
+            imgui.text(format!("Root objects: {}", root_object_count));
+            imgui.text(format!(
+                "Transform updates this frame: {}",
+                total_update_count
+            ));
+        });
     }
 
     /// Recursively updates an object's world transform and its children
-    fn update_object_transform_recursive(&self, object_id: ObjectId, parent_world_matrix: Mat4) {
+    fn update_object_transform_recursive(
+        &self,
+        object_id: ObjectId,
+        parent_world_matrix: Mat4,
+        imgui: &imgui::Ui,
+        total_update_count: &mut usize,
+    ) {
         if let Some(object) = self.objects.get(object_id) {
             // Only update if the world transform is dirty
             if object.transform.is_world_dirty() {
                 let local_matrix = *object.transform.get_local_matrix();
                 let world_matrix = parent_world_matrix * local_matrix;
                 object.transform.set_world_matrix(world_matrix);
+                *total_update_count += 1;
             }
 
             // Update all children with this object's world matrix
             let world_matrix = *object.transform.get_world_matrix();
             for &child_id in &object.child_ids {
-                self.update_object_transform_recursive(child_id, world_matrix);
+                self.update_object_transform_recursive(
+                    child_id,
+                    world_matrix,
+                    imgui,
+                    total_update_count,
+                );
             }
         }
     }
@@ -272,7 +301,7 @@ impl Scene {
         }
     }
 
-    pub fn late_update(&mut self) {
-        self.update_transforms();
+    pub fn late_update(&mut self, imgui: &imgui::Ui) {
+        self.update_transforms(imgui);
     }
 }

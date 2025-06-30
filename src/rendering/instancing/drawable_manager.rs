@@ -54,14 +54,23 @@ impl DrawableManager {
             };
 
             let matrix = object.transform.get_world_matrix().clone();
+            let inverse_transpose_matrix = object
+                .transform
+                .get_inverse_transpose_world_matrix()
+                .clone();
 
             for primitive in &model.model.primitives {
                 self.drawables.push(Drawable::new(
                     matrix,
+                    inverse_transpose_matrix,
                     primitive.global_index as u32,
                     primitive.material_id.index() as u32,
                 ));
             }
+
+            /*self.drawables.iter_mut().for_each(|drawable| {
+                drawable.calculate_inverse_transpose_model_matrix();
+            });*/
         }
 
         imgui_ui

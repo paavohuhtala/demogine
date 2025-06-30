@@ -63,6 +63,7 @@ impl GeometryPass {
                         .drawable_buffers
                         .visible_drawables
                         .bind_group_layout(),
+                    context.material_manager.bind_group_layout(),
                 ],
                 push_constant_ranges: &[],
             });
@@ -171,6 +172,7 @@ impl GeometryPass {
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
         render_pass.set_bind_group(1, self.drawable_buffers.visible_drawables.bind_group(), &[]);
+        render_pass.set_bind_group(2, context.material_manager.bind_group(), &[]);
 
         render_pass.set_vertex_buffer(0, self.mesh_buffers.vertices.slice(..));
         render_pass.set_index_buffer(

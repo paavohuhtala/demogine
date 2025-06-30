@@ -9,6 +9,7 @@ pub struct Transform {
 
     local_matrix: RefCell<glam::Mat4>,
     world_matrix: RefCell<glam::Mat4>,
+    inverse_transpose_world_matrix: RefCell<glam::Mat4>,
     local_dirty: Cell<bool>,
     world_dirty: Cell<bool>,
     has_changed_since_last_update: Cell<bool>,
@@ -22,6 +23,7 @@ impl Transform {
             scale: 1.0,
             local_matrix: RefCell::new(Mat4::IDENTITY),
             world_matrix: RefCell::new(Mat4::IDENTITY),
+            inverse_transpose_world_matrix: RefCell::new(Mat4::IDENTITY),
             local_dirty: Cell::new(true),
             world_dirty: Cell::new(true),
             has_changed_since_last_update: Cell::new(true),
@@ -49,10 +51,16 @@ impl Transform {
         self.world_matrix.borrow()
     }
 
+    pub fn get_inverse_transpose_world_matrix(&self) -> Ref<glam::Mat4> {
+        self.inverse_transpose_world_matrix.borrow()
+    }
+
     pub fn set_world_matrix(&self, world_matrix: Mat4) {
         self.world_matrix.replace(world_matrix);
         self.world_dirty.set(false);
         self.has_changed_since_last_update.set(true);
+        self.inverse_transpose_world_matrix
+            .replace(world_matrix.inverse().transpose());
     }
 
     pub fn invalidate_local(&self) {

@@ -1,12 +1,12 @@
 #import shared::camera::CameraUniform
-#import shared::drawable::Drawable
+#import shared::drawable::VisibleDrawable
 #import shared::material_info::MaterialInfo
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
 @group(1) @binding(0)
-var<storage, read> drawables: array<Drawable>;
+var<storage, read> drawables: array<VisibleDrawable>;
 
 @group(2) @binding(0)
 var<storage, read> material_info: array<MaterialInfo>;
