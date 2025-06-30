@@ -1,0 +1,60 @@
+# Still unnammed demo engine
+
+![A screenshot from the engine's test scene](image.png)
+
+Demogine (working title) is a [demo](https://en.wikipedia.org/wiki/Demoscene) engine written in Rust, using [wgpu](https://wgpu.rs/) for rendering, and some components from [bevy](https://bevyengine.org/) (but excluding the ECS, at the moment). Its design and feature set is inspired by my earlier WebGL 2 / TypeScript / Rust (via WASM) demo engine, which I have covered in a [blog post](https://blog.paavo.me/demo-engine-part-1/).
+
+You should be able to build and run the engine's test scene with just `cargo run`. Pass the `--release` flag for improved performance.
+
+## Features and lack thereof
+
+- ✅ GLTF loading
+  - Tangent generation via `bevy_mikktspace`
+  - (Only) supports data exported by Substance Painter 2020, because that's what I have.
+- ✅ Shader hot reloading
+  - Shaders are written in WGSL
+  - Preprocessing / modules via `naga_oil`
+- ✅ dear imgui integration
+- ✅ GPU driven rendering using compute shaders
+  - AABB frustum culling
+  - Indirect drawing
+- ✅ Bindless textures
+- ✅ Basic scene graph
+  - Stored in a single flat `Arena` to avoid ownership issues and for efficient traversal
+- Supported platforms: Windows and macOS. Linux might work, but is not tested.
+
+## Planned features
+
+Most if not all of these were already present in my previous demo engine, so I kno at least in theory how to implement them.
+
+- Fundamental systems for demo creation
+  - Timeline synced to BPM
+  - State as a pure function of time (when possible)
+    - Enables scrubbing through the demo like a video
+- Audio support
+  - Playing a single audio file should be enough for now
+  - FFT for audio visualization
+- Deferred rendering
+- PBR shading
+- Cascaded shadow mapping
+- Light volumes
+- Particle systems
+- Post processing effects
+  - FXAA
+  - Fog
+  - Film grain
+  - Bloom
+  - Motion blur
+  - SSAO
+
+### Unplanned features
+
+- No dynamic streaming of assets; everything is loaded at startup.
+- This is not a game engine
+  - No input handling
+  - No networking
+  - No GUI support (other than dear imgui for debugging)
+
+## License
+
+Licensed under the [MIT License](./license.md).
